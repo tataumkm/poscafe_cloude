@@ -1,6 +1,6 @@
 import { Api } from './api.js';
 import { Store } from './store.js';
-import { rupiah, numOnly, todayStr, nowTimeStr, formatTanggal, hitungHpp, hitungHargaSaran, uid, toast } from './utils.js';
+import { rupiah, numOnly, todayStr, nowTimeStr, formatTanggal, hitungHpp, hitungHargaSaran, hitungAvco, uid, toast } from './utils.js';
 
 // ============ STATE GLOBAL ============
 const state = {
@@ -290,7 +290,7 @@ function renderMenuFormSheet() {
   const bahanList = getBahanList();
   const hpp = d.resep.reduce((s, r) => {
     const b = bahanList.find(x => x.id === r.bahanId);
-    return s + (b ? Number(b.hargaTerakhir || 0) : 0) * Number(r.qty || 0);
+    return s + (b ? Number(b.hargaAvco ?? b.hargaTerakhir ?? 0) : 0) * Number(r.qty || 0);
   }, 0);
   const settings = getSettings();
   const saranOffline = hitungHargaSaran(hpp, d.marginPercent, 0);
@@ -356,11 +356,12 @@ function renderStokPage() {
       ${bahanList.map(b => {
         const min = Number(b.stokMinimum || 0);
         const low = Number(b.stok || 0) <= min;
+        const avco = Number(b.hargaAvco ?? b.hargaTerakhir ?? 0);
         return `
         <div class="item-line">
           <div>
             <div class="name">${escapeHtml(b.nama)} <span class="badge ${low ? 'low' : 'ok'}">${low ? 'Stok Menipis' : 'Aman'}</span></div>
-            <div class="sub">Harga terakhir ${rupiah(b.hargaTerakhir)} / ${b.satuan}</div>
+            <div class="sub">Rata-rata (AVCO) ${rupiah(avco)} / ${b.satuan}</div>
           </div>
           <div style="text-align:right">
             <div class="amt">${b.stok} ${b.satuan}</div>
@@ -371,17 +372,23 @@ function renderStokPage() {
     </div>`}
 
     <div class="section-title">Riwayat Belanja Bahan</div>
-    ${Store.get('BelanjaBahan').slice().reverse().slice(0, 20).map(b => `
+    ${Store.get('BelanjaBahan').slice().reverse().slice(0, 20).map(b => {
+      const totalHarga = b.hargaBeliTotal ?? b.total ?? 0;
+      const totalMasuk = b.totalMasuk ?? b.qty ?? 0;
+      const hargaPerSatuan = b.hargaPerSatuan ?? b.hargaSatuan ?? 0;
+      return `
       <div class="card">
-        <div class="row"><span class="k">${formatTanggal(b.tanggal)}</span><span class="v">${rupiah(b.total)}</span></div>
-        <div class="row"><span class="k">${escapeHtml(b.bahanNama)}</span><span class="v">${b.qty} ${b.satuan} × ${rupiah(b.hargaSatuan)}</span></div>
-      </div>
-    `).join('') || `<div class="empty">Belum ada riwayat belanja.</div>`}
+        <div class="row"><span class="k">${formatTanggal(b.tanggal)}${b.kemasanNama ? ' · ' + escapeHtml(b.kemasanNama) : ''}</span><span class="v">${rupiah(totalHarga)}</span></div>
+        <div class="row"><span class="k">${escapeHtml(b.bahanNama)}${b.qtyKemasan ? ` (${b.qtyKemasan} kemasan)` : ''}</span><span class="v" style="font-size:12px">${totalMasuk} ${b.satuan} · ${rupiah(hargaPerSatuan)}/${b.satuan}</span></div>
+        ${b.avcoSesudah !== undefined ? `<div class="hint">AVCO diperbarui jadi ${rupiah(b.avcoSesudah)} / ${b.satuan}</div>` : ''}
+      </div>`;
+    }).join('') || `<div class="empty">Belum ada riwayat belanja.</div>`}
   `;
 }
 
 function openBelanjaForm() {
   openSheet(renderBelanjaFormSheet(), 'belanja-form');
+  updateBelanjaPreview();
 }
 function renderBelanjaFormSheet() {
   const bahanList = getBahanList();
@@ -395,38 +402,79 @@ function renderBelanjaFormSheet() {
     <label>Bahan</label>
     <select id="bf-bahan-select">
       <option value="__new__">+ Bahan baru...</option>
-      ${bahanList.map(b => `<option value="${b.id}">${escapeHtml(b.nama)}</option>`).join('')}
+      ${bahanList.map(b => `<option value="${b.id}">${escapeHtml(b.nama)} (${b.satuan})</option>`).join('')}
     </select>
 
     <div id="bf-new-bahan-wrap">
       <label>Nama Bahan Baru</label>
-      <input id="bf-nama-baru" placeholder="Kopi Robusta" />
+      <input id="bf-nama-baru" placeholder="Susu UHT" />
+      <label>Satuan Dasar (satuan terkecil yang dipakai di resep)</label>
+      <input id="bf-satuan-dasar" placeholder="ml, gram, pcs" />
+      <div class="hint">Contoh: resep pakai "ml", isi "ml" di sini walau kamu belinya per liter/botol — konversinya diatur di bawah.</div>
     </div>
+
+    <div class="section-title" style="margin-top:16px">Rincian Pembelian</div>
+    <div class="hint" style="margin-bottom:6px">Isi sesuai kemasan yang kamu beli. Sistem otomatis menghitung harga per satuan resep + memperbarui harga rata-rata (AVCO).</div>
+
+    <label>Nama Kemasan (opsional, buat catatan)</label>
+    <input id="bf-kemasan-nama" placeholder="Botol 1 Liter" />
 
     <div class="field-row">
       <div>
-        <label>Jumlah</label>
-        <input type="number" step="0.01" id="bf-qty" placeholder="5" />
+        <label>Isi per Kemasan</label>
+        <input type="number" step="0.01" id="bf-isi-kemasan" placeholder="1000" value="1" />
       </div>
       <div>
-        <label>Satuan</label>
-        <input id="bf-satuan" placeholder="kg / liter / pcs" />
+        <label>Jumlah Kemasan Dibeli</label>
+        <input type="number" step="0.01" id="bf-qty-kemasan" placeholder="1" />
       </div>
     </div>
+    <div class="hint" id="bf-satuan-dasar-hint">dalam satuan dasar bahan</div>
 
-    <label>Harga per Satuan</label>
-    <input type="number" id="bf-harga-satuan" placeholder="35000" />
+    <label>Total Harga Pembelian (semua kemasan)</label>
+    <input type="number" id="bf-harga-total" placeholder="20000" />
 
-    <label>Stok Minimum (opsional, untuk peringatan stok menipis)</label>
+    <label>Stok Minimum (opsional, khusus bahan baru)</label>
     <input type="number" id="bf-stok-min" placeholder="0" />
 
     <label>Supplier (opsional)</label>
     <input id="bf-supplier" placeholder="Toko Sumber Rejeki" />
 
-    <div class="row" style="margin-top:10px"><span class="k">Total Belanja</span><span class="v big" id="bf-total-preview">Rp0</span></div>
+    <div class="card" style="margin-top:10px">
+      <div class="row"><span class="k">Total Masuk Stok</span><span class="v" id="bf-total-masuk-preview">0</span></div>
+      <div class="row"><span class="k">Harga / Satuan Dasar</span><span class="v" id="bf-harga-satuan-preview">Rp0</span></div>
+      <div class="row"><span class="k">Harga AVCO Setelah Ini</span><span class="v positive big" id="bf-avco-preview">Rp0</span></div>
+    </div>
 
     <button class="btn btn-primary" data-save-belanja style="margin-top:10px">Simpan Belanja</button>
   `;
+}
+
+// Kalkulator live: hitung harga per satuan dasar + AVCO tanpa reload seluruh
+// form (biar fokus input tidak hilang saat mengetik).
+function updateBelanjaPreview() {
+  const isi = numOnly(document.getElementById('bf-isi-kemasan')?.value) || 0;
+  const qty = numOnly(document.getElementById('bf-qty-kemasan')?.value) || 0;
+  const total = numOnly(document.getElementById('bf-harga-total')?.value) || 0;
+  const totalMasuk = isi * qty;
+  const hargaPerSatuan = totalMasuk > 0 ? total / totalMasuk : 0;
+
+  const select = document.getElementById('bf-bahan-select');
+  const bahanId = select ? select.value : '__new__';
+  const bahan = bahanId && bahanId !== '__new__' ? getBahanList().find(b => b.id === bahanId) : null;
+  const stokLama = bahan ? Number(bahan.stok || 0) : 0;
+  const avcoLama = bahan ? Number(bahan.hargaAvco ?? bahan.hargaTerakhir ?? 0) : 0;
+  const avcoBaru = hitungAvco(stokLama, avcoLama, totalMasuk, hargaPerSatuan);
+  const satuanDasar = bahan ? bahan.satuan : (document.getElementById('bf-satuan-dasar')?.value.trim() || '');
+
+  const elMasuk = document.getElementById('bf-total-masuk-preview');
+  const elHarga = document.getElementById('bf-harga-satuan-preview');
+  const elAvco = document.getElementById('bf-avco-preview');
+  const elHint = document.getElementById('bf-satuan-dasar-hint');
+  if (elMasuk) elMasuk.textContent = totalMasuk.toLocaleString('id-ID') + (satuanDasar ? ' ' + satuanDasar : '');
+  if (elHarga) elHarga.textContent = rupiah(hargaPerSatuan) + (satuanDasar ? ' / ' + satuanDasar : '');
+  if (elAvco) elAvco.textContent = rupiah(avcoBaru) + (satuanDasar ? ' / ' + satuanDasar : '') + (stokLama > 0 ? ` (sebelumnya ${rupiah(avcoLama)})` : ' (harga awal)');
+  if (elHint) elHint.textContent = satuanDasar ? `dalam satuan dasar: ${satuanDasar}` : 'dalam satuan dasar bahan';
 }
 
 function editBahanPrompt(bahanId) {
