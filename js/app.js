@@ -503,6 +503,8 @@ function renderLaporanHarian() {
   `;
 }
 
+
+
 function renderAkuntansi() {
   const periode = state.akuntansiPeriode;
   const modalAll = Store.get('Modal');
