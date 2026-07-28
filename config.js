@@ -1,6 +1,6 @@
 // GANTI dengan URL Web App hasil deploy Google Apps Script kamu.
 // Contoh: https://script.google.com/macros/s/AKfycb.../exec
-export const API_URL = 'PASTE_URL_WEB_APP_GOOGLE_APPS_SCRIPT_DI_SINI';
+export const API_URL = 'https://script.google.com/macros/s/AKfycbwsR-Y5XxMGYK0L0OqvDgFLUj5FRCGzBq_pnBI6oEgz6hKBHEOWWUfwNjlkiLveHBwZ/exec';
 
 export const SHEETS = ['Modal', 'Aset', 'BelanjaBahan', 'Bahan', 'Menu', 'Penjualan', 'Settings'];
 
