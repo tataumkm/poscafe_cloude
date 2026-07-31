@@ -24,14 +24,26 @@ export function formatTanggal(iso) {
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// Total HPP satu menu = jumlah (qty bahan x harga terakhir bahan) dari resep
+// Total HPP satu menu = jumlah (qty bahan x harga AVCO bahan) dari resep.
+// Pakai harga rata-rata tertimbang (AVCO), bukan harga beli terakhir saja,
+// supaya HPP tetap stabil walau harga tiap belanja naik-turun.
 export function hitungHpp(menu, bahanList) {
   if (!menu.resep || !menu.resep.length) return 0;
   return menu.resep.reduce((sum, r) => {
     const bahan = bahanList.find(b => b.id === r.bahanId);
-    const harga = bahan ? Number(bahan.hargaTerakhir || 0) : 0;
+    const harga = bahan ? Number(bahan.hargaAvco ?? bahan.hargaTerakhir ?? 0) : 0;
     return sum + harga * Number(r.qty || 0);
   }, 0);
+}
+
+// AVCO (Average Cost) — harga rata-rata tertimbang setelah ada stok baru masuk.
+// Rumus: (nilai stok lama + nilai pembelian baru) / (stok lama + qty masuk)
+export function hitungAvco(stokLama, avcoLama, qtyMasuk, hargaSatuanBaru) {
+  const nilaiLama = Number(stokLama || 0) * Number(avcoLama || 0);
+  const nilaiBaru = Number(qtyMasuk || 0) * Number(hargaSatuanBaru || 0);
+  const stokBaru = Number(stokLama || 0) + Number(qtyMasuk || 0);
+  if (stokBaru <= 0) return 0;
+  return (nilaiLama + nilaiBaru) / stokBaru;
 }
 
 // Harga jual saran = HPP dinaikkan margin%, lalu dibagi (1 - potongan admin platform%)
