@@ -28,6 +28,9 @@ export const Store = {
   },
 
   get(sheet) {
+    return (this.data[sheet] || []).filter(r => !r.deleted);
+  },
+  getWithDeleted(sheet) {
     return this.data[sheet] || [];
   },
 
@@ -100,6 +103,10 @@ export const Store = {
     this.saveLocal(sheet);
     this.emit();
     this._push('delete', sheet, { id });
+  },
+
+  softDelete(sheet, id) {
+    return this.update(sheet, id, { deleted: true, deletedAt: new Date().toISOString() });
   },
 
   // ---- antrian kirim ke server (retry kalau gagal / offline) ----

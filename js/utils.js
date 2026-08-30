@@ -10,12 +10,12 @@ export function numOnly(v) {
 
 export function todayStr() {
   const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 export function nowTimeStr() {
   const d = new Date();
-  return d.toTimeString().slice(0, 5);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
 export function formatTanggal(iso) {
@@ -52,7 +52,9 @@ export function hitungAvco(stokLama, avcoLama, qtyMasuk, hargaSatuanBaru) {
 export function hitungHargaSaran(hpp, marginPercent, adminPercent) {
   const margin = Number(marginPercent || 0) / 100;
   const admin = Math.min(Number(adminPercent || 0) / 100, 0.95);
-  const raw = (hpp * (1 + margin)) / (1 - admin);
+  const divisor = 1 - admin;
+  const raw = divisor <= 0 ? Infinity : (hpp * (1 + margin)) / divisor;
+  if (!isFinite(raw)) return 0;
   return Math.ceil(raw / 500) * 500;
 }
 

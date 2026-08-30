@@ -14,7 +14,8 @@ const state = {
   laporanTanggal: todayStr(),
   akuntansiPeriode: 'bulan',
   menuFormDraft: null,  // dipakai saat tambah/edit menu
-  bahanFormEditingId: null
+  bahanFormEditingId: null,
+  lastTrx: null
 };
 
 const $app = document.getElementById('app');
@@ -113,10 +114,6 @@ function renderKasir() {
   const filtered = state.menuKategoriFilter === 'Semua' ? menus : menus.filter(m => m.kategori === state.menuKategoriFilter);
   const settings = getSettings();
 
-  const cartTotalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
-  const cartTotalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
-  const grandTotal = cartTotalJual + Number(state.adjustment || 0);
-
   return `
     <div class="chips">
       ${kategoris.map(k => `<div class="chip ${state.menuKategoriFilter === k ? 'active' : ''}" data-kategori-filter="${k}">${k}</div>`).join('')}
@@ -136,45 +133,60 @@ function renderKasir() {
       `).join('')}
     </div>`}
 
-    <div class="section-title">Keranjang ${state.cart.length ? `(${state.cart.length})` : ''}</div>
-    <div class="card">
-      ${state.cart.length === 0 ? `<div class="empty" style="padding:16px">Keranjang masih kosong. Tap menu di atas untuk menambah.</div>` : `
-        ${state.cart.map((c, i) => `
-          <div class="item-line">
-            <div style="flex:1">
-              <div class="name">${escapeHtml(c.nama)}</div>
-              <div class="qty-stepper" style="margin-top:6px">
-                <button data-cart-dec="${i}">−</button>
-                <div class="qn">${c.qty}</div>
-                <button data-cart-inc="${i}">+</button>
-                <button data-cart-remove="${i}" style="margin-left:auto;color:var(--negative);border-color:var(--negative)">✕</button>
-              </div>
-            </div>
-            <div style="text-align:right;min-width:110px">
-              <label style="margin:0 0 2px;font-size:10px">Harga satuan</label>
-              <input type="number" data-cart-price="${i}" value="${c.hargaJual}" style="text-align:right;padding:8px" />
-            </div>
-          </div>
-        `).join('')}
-        <hr class="receipt-divider" />
-        <div class="row"><span class="k">Subtotal</span><span class="v">${rupiah(cartTotalJual)}</span></div>
-        <div>
-          <label>Penyesuaian (promo/biaya iklan, boleh minus)</label>
-          <input type="number" id="input-adjustment" value="${state.adjustment}" placeholder="mis. -5000 untuk potongan" />
-          <div class="hint">Isi minus kalau ada potongan promo/biaya iklan platform, isi plus kalau ada tambahan biaya lain.</div>
-        </div>
-        <div>
-          <label>Platform</label>
-          <select id="input-platform">
-            ${settings.platforms.map(p => `<option value="${p.nama}" ${state.platform === p.nama ? 'selected' : ''}>${p.nama}${p.adminPercent ? ` (admin ${p.adminPercent}%)` : ''}</option>`).join('')}
-          </select>
-        </div>
-        <div class="row" style="margin-top:6px"><span class="k">Total Diterima</span><span class="v big">${rupiah(grandTotal)}</span></div>
-        <div class="row"><span class="k">Estimasi Laba</span><span class="v ${grandTotal - cartTotalHpp >= 0 ? 'positive' : 'negative'}">${rupiah(grandTotal - cartTotalHpp)}</span></div>
-        <button class="btn btn-primary" id="btn-checkout" style="margin-top:10px">Selesaikan Transaksi</button>
-      `}
-    </div>
+    <div class="section-title" id="cart-title">Keranjang ${state.cart.length ? `(${state.cart.length})` : ''}</div>
+    <div class="card" id="cart-container">${renderCartInner()}</div>
   `;
+}
+
+function renderCartInner() {
+  if (!state.cart.length) {
+    return `<div class="empty" style="padding:16px">Keranjang masih kosong. Tap menu di atas untuk menambah.</div>`;
+  }
+  const cartTotalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
+  const cartTotalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
+  const grandTotal = cartTotalJual + Number(state.adjustment || 0);
+  return `
+    ${state.cart.map((c, i) => `
+      <div class="item-line">
+        <div style="flex:1">
+          <div class="name">${escapeHtml(c.nama)}</div>
+          <div class="qty-stepper" style="margin-top:6px">
+            <button data-cart-dec="${i}">−</button>
+            <div class="qn">${c.qty}</div>
+            <button data-cart-inc="${i}">+</button>
+            <button data-cart-remove="${i}" style="margin-left:auto;color:var(--negative);border-color:var(--negative)">✕</button>
+          </div>
+        </div>
+        <div style="text-align:right;min-width:110px">
+          <label style="margin:0 0 2px;font-size:10px">Harga satuan</label>
+          <input type="number" data-cart-price="${i}" value="${c.hargaJual}" style="text-align:right;padding:8px" />
+        </div>
+      </div>
+    `).join('')}
+    <hr class="receipt-divider" />
+    <div class="row"><span class="k">Subtotal</span><span class="v">${rupiah(cartTotalJual)}</span></div>
+    <div>
+      <label>Penyesuaian (promo/biaya iklan, boleh minus)</label>
+      <input type="number" id="input-adjustment" value="${state.adjustment}" placeholder="mis. -5000 untuk potongan" />
+      <div class="hint">Isi minus kalau ada potongan promo/biaya iklan platform, isi plus kalau ada tambahan biaya lain.</div>
+    </div>
+    <div>
+      <label>Platform</label>
+      <select id="input-platform">
+        ${getSettings().platforms.map(p => `<option value="${p.nama}" ${state.platform === p.nama ? 'selected' : ''}>${p.nama}${p.adminPercent ? ` (admin ${p.adminPercent}%)` : ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="row" style="margin-top:6px"><span class="k">Total Diterima</span><span class="v big" id="ct-total">${rupiah(grandTotal)}</span></div>
+    <div class="row"><span class="k">Estimasi Laba</span><span class="v ${grandTotal - cartTotalHpp >= 0 ? 'positive' : 'negative'}" id="ct-laba">${rupiah(grandTotal - cartTotalHpp)}</span></div>
+    <button class="btn btn-primary" id="btn-checkout" style="margin-top:10px">Selesaikan Transaksi</button>
+  `;
+}
+
+function renderCartRegion() {
+  const container = document.getElementById('cart-container');
+  if (container) container.innerHTML = renderCartInner();
+  const title = document.getElementById('cart-title');
+  if (title) title.textContent = `Keranjang${state.cart.length ? ` (${state.cart.length})` : ''}`;
 }
 
 function adminPercentFor(platformName) {
@@ -192,7 +204,7 @@ function addToCart(menuId) {
   const existing = state.cart.find(c => c.menuId === menuId);
   if (existing) { existing.qty += 1; }
   else { state.cart.push({ menuId, nama: menu.nama, qty: 1, hargaJual: hargaDefault, hpp }); }
-  render();
+  renderCartRegion();
 }
 
 async function checkout() {
@@ -215,9 +227,22 @@ async function checkout() {
   });
   const patches = Object.keys(deduction).map(bahanId => {
     const bahan = bahanList.find(b => b.id === bahanId);
-    const stokBaru = Math.max(0, Number((bahan && bahan.stok) || 0) - deduction[bahanId]);
+    const stokSekarang = Number((bahan && bahan.stok) || 0);
+    const stokBaru = Math.max(0, stokSekarang - deduction[bahanId]);
     return { id: bahanId, patch: { stok: stokBaru } };
   });
+
+  // Validasi stok cukup SEBELUM transaksi disimpan
+  const kurang = Object.keys(deduction).filter(bahanId => {
+    const bahan = bahanList.find(b => b.id === bahanId);
+    return Number((bahan && bahan.stok) || 0) - deduction[bahanId] < 0;
+  });
+  if (kurang.length) {
+    const nama = kurang.map(id => (bahanList.find(b => b.id === id) || {}).nama || id).join(', ');
+    toast('Stok tidak cukup: ' + nama);
+    return;
+  }
+
   if (patches.length) await Store.batchUpdate('Bahan', patches);
 
   const transaksi = {
@@ -239,6 +264,99 @@ async function checkout() {
   state.catatan = '';
   toast('Transaksi tersimpan ✓');
   render();
+  state.lastTrx = transaksi;
+  openPaymentSheet(transaksi);
+}
+
+// ===== Pembayaran & cetak struk (mobile-friendly, tanpa prompt/confirm) =====
+let payStr = '';
+function openPaymentSheet(trx) {
+  const total = Number(trx.total || 0);
+  payStr = String(total);
+  const html = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Pembayaran</h2><button class="btn-icon" data-close-pay>✕</button></div>
+    <div class="row"><span class="k">Total Tagihan</span><span class="v big" id="pay-total">${rupiah(total)}</span></div>
+    <label>Uang Diterima</label>
+    <div class="pay-display" id="pay-display">${rupiah(payValue())}</div>
+    <div class="pay-kb">
+      ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="pay-key" data-pay-key="${n}">${n}</button>`).join('')}
+    </div>
+    <div class="pay-kb">
+      <button class="pay-key" data-pay-bks>⌫</button>
+      <button class="pay-key" data-pay-key="0">0</button>
+      <button class="pay-key" data-pay-clr>C</button>
+    </div>
+    <div class="pay-actions">
+      <button class="btn btn-ghost" data-pay-exact>Uang Pas</button>
+      <button class="btn btn-primary" data-pay-ok>Bayar</button>
+    </div>
+    <div class="hint" id="pay-kembali"></div>
+    <div class="pay-actions">
+      <button class="btn btn-ghost btn-sm" data-pay-cancel>Tanpa Cetak</button>
+    </div>`;
+  openSheet(html, 'pay');
+  renderPay();
+}
+
+function payValue() { return parseInt(payStr.replace(/[^\d]/g, ''), 10) || 0; }
+
+function renderPay() {
+  const total = Number((state.lastTrx || {}).total) || 0;
+  const disp = document.getElementById('pay-display');
+  if (disp) disp.textContent = rupiah(payValue());
+  const el = document.getElementById('pay-kembali');
+  if (!el) return;
+  const kemb = payValue() - total;
+  if (kemb < 0) el.textContent = 'Uang kurang: ' + rupiah(-kemb);
+  else el.textContent = 'Kembalian: ' + rupiah(kemb) + (kemb === 0 ? ' (pas)' : '');
+}
+
+function doPay() {
+  const trx = state.lastTrx;
+  const total = Number(trx && trx.total) || 0;
+  const bayar = payValue() > 0 ? payValue() : total;
+  closeSheet();
+  state.lastTrx = null;
+  printReceipt(trx, bayar);
+}
+
+function closePayment() {
+  closeSheet();
+  state.lastTrx = null;
+}
+
+function printReceipt(trx, bayar) {
+  const setting = getSettings();
+  const shopName = (setting.namaToko || 'Cafeku').replace(/</g, '&lt;');
+  const kembalian = Number(bayar || 0) - Number(trx.total || 0);
+  const itemRows = (trx.items || []).map(it => `
+    <div class="pr-item">
+      <div class="pr-name">${escapeHtml(it.nama)}</div>
+      <div class="pr-sub">${it.qty} × ${rupiah(it.hargaJual)}</div>
+      <div class="pr-amt">${rupiah(it.hargaJual * it.qty)}</div>
+    </div>`).join('');
+
+  const html = `
+    <div class="pr-center"><b>${shopName}</b></div>
+    <div class="pr-center">STRUK KASIR</div>
+    <div class="pr-row"><span>Tanggal</span><span>${formatTanggal(trx.tanggal)}</span></div>
+    <div class="pr-row"><span>Jam</span><span>${trx.waktu}</span></div>
+    <div class="pr-row"><span>Platform</span><span>${escapeHtml(trx.platform || 'Offline')}</span></div>
+    <div class="pr-divider"></div>
+    ${itemRows}
+    <div class="pr-divider"></div>
+    <div class="pr-row"><span>Subtotal</span><span>${rupiah(trx.subtotal)}</span></div>
+    ${Number(trx.adjustment) ? `<div class="pr-row"><span>Penyesuaian</span><span>${rupiah(trx.adjustment)}</span></div>` : ''}
+    <div class="pr-row pr-big"><span><b>TOTAL</b></span><span><b>${rupiah(trx.total)}</b></span></div>
+    <div class="pr-row"><span>Dibayar</span><span>${rupiah(bayar)}</span></div>
+    <div class="pr-row"><span>Kembalian</span><span>${kembalian >= 0 ? rupiah(kembalian) : 'KURANG ' + rupiah(-kembalian)}</span></div>
+    <div class="pr-center pr-foot">Terima kasih, sampai jumpa!</div>`;
+
+  let p = document.getElementById('print-receipt');
+  if (!p) { p = document.createElement('div'); p.id = 'print-receipt'; document.body.appendChild(p); }
+  p.innerHTML = html;
+  window.print();
 }
 
 // =========================================================
@@ -327,11 +445,11 @@ function renderMenuFormSheet() {
 
     <div class="section-title" style="margin-top:16px">Harga</div>
     <div class="card">
-      <div class="row"><span class="k">HPP Otomatis</span><span class="v big">${rupiah(hpp)}</span></div>
+      <div class="row"><span class="k">HPP Otomatis</span><span class="v big" id="mf-hpp">${rupiah(hpp)}</span></div>
       <label>Margin (% dari HPP)</label>
       <input type="number" id="mf-margin" value="${d.marginPercent}" />
       <div class="hint">
-        Saran harga Offline: <b>${rupiah(saranOffline)}</b> · Saran harga Online (dengan admin platform): <b>${rupiah(saranOnline)}</b>
+        Saran harga Offline: <b id="mf-saran-offline">${rupiah(saranOffline)}</b> · Saran harga Online (dengan admin platform): <b id="mf-saran-online">${rupiah(saranOnline)}</b>
       </div>
       <label>Harga Jual Tetap (opsional, kosongkan untuk pakai saran otomatis)</label>
       <input type="number" id="mf-harga-manual" value="${d.hargaJualManual || ''}" placeholder="mis. 18000" />
@@ -547,6 +665,7 @@ function renderLaporanHarian() {
       <div class="card">
         <div class="row"><span class="k">${t.waktu} · ${t.platform}</span><span class="v">${rupiah(t.total)}</span></div>
         ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">🖨 Cetak Ulang Struk</button>
       </div>
     `).join('')}
   `;
@@ -705,6 +824,18 @@ document.addEventListener('click', async (e) => {
   if (nav) { state.page = nav.dataset.nav; render(); return; }
 
   if (t.closest('[data-close-sheet]')) { closeSheet(); return; }
+  if (t.closest('[data-close-pay]')) { closePayment(); return; }
+  if (t.closest('[data-pay-cancel]')) { closePayment(); return; }
+  if (t.dataset.payKey !== undefined) { payStr = (payStr + t.dataset.payKey).replace(/^0+(?=\d)/, ''); renderPay(); return; }
+  if (t.dataset.payBks !== undefined) { payStr = payStr.slice(0, -1); renderPay(); return; }
+  if (t.dataset.payClr !== undefined) { payStr = ''; renderPay(); return; }
+  if (t.dataset.payExact !== undefined) { payStr = String(Number((state.lastTrx || {}).total) || 0); renderPay(); return; }
+  if (t.dataset.payOk !== undefined) { doPay(); return; }
+  if (t.dataset.reprint) {
+    const tr = Store.get('Penjualan').find(x => x.id === t.dataset.reprint);
+    if (tr) printReceipt(tr, Number(tr.total) || 0);
+    return;
+  }
 
   if (t.dataset.open === 'modal-form') return openModalForm();
   if (t.dataset.open === 'aset-form') return openAsetForm();
@@ -718,20 +849,20 @@ document.addEventListener('click', async (e) => {
   // KASIR
   const pick = t.closest('[data-pick-menu]');
   if (pick) return addToCart(pick.dataset.pickMenu);
-  if (t.dataset.cartInc !== undefined) { state.cart[+t.dataset.cartInc].qty++; render(); return; }
+  if (t.dataset.cartInc !== undefined) { state.cart[+t.dataset.cartInc].qty++; renderCartRegion(); return; }
   if (t.dataset.cartDec !== undefined) {
     const i = +t.dataset.cartDec;
     state.cart[i].qty--;
     if (state.cart[i].qty <= 0) state.cart.splice(i, 1);
-    render(); return;
+    renderCartRegion(); return;
   }
-  if (t.dataset.cartRemove !== undefined) { state.cart.splice(+t.dataset.cartRemove, 1); render(); return; }
+  if (t.dataset.cartRemove !== undefined) { state.cart.splice(+t.dataset.cartRemove, 1); renderCartRegion(); return; }
   if (t.id === 'btn-checkout') return checkout();
 
   // MENU
   if (t.dataset.editMenu) return openMenuForm(t.dataset.editMenu);
   if (t.dataset.deleteMenu) {
-    if (confirm('Hapus menu ini?')) { await Store.remove('Menu', t.dataset.deleteMenu); render(); }
+    if (confirm('Hapus menu ini? Data tidak hilang permanen (soft delete).')) { await Store.softDelete('Menu', t.dataset.deleteMenu); render(); }
     return;
   }
   if (t.dataset.resepAdd !== undefined) { state.menuFormDraft.resep.push(newResepRow()); refreshSheet(renderMenuFormSheet()); return; }
@@ -742,8 +873,8 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.editBahan) return editBahanPrompt(t.dataset.editBahan);
   if (t.dataset.saveBahan) return saveBahanEdit(t.dataset.saveBahan);
   if (t.dataset.deleteBahan) {
-    if (confirm('Hapus bahan ini? Riwayat belanja terkait tidak ikut terhapus.')) {
-      await Store.remove('Bahan', t.dataset.deleteBahan); closeSheet(); render();
+    if (confirm('Hapus bahan ini? Riwayat belanja terkait tidak ikut terhapus (soft delete).')) {
+      await Store.softDelete('Bahan', t.dataset.deleteBahan); closeSheet(); render();
     }
     return;
   }
@@ -754,6 +885,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.saveAset !== undefined) return saveAsetForm();
   if (t.dataset.addPlatform !== undefined) {
     const s = getSettings();
+    s.id = s.id || 'settings-1';
     s.platforms.push({ nama: '', adminPercent: 0 });
     await Store.update('Settings', s.id, s);
     render(); return;
@@ -764,7 +896,18 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
-  if (t.id === 'input-adjustment') { state.adjustment = numOnly(t.value); return; }
+  if (t.id === 'input-adjustment') {
+    state.adjustment = numOnly(t.value);
+    // update total & laba live tanpa re-render (biar fokus tidak hilang)
+    const cartTotalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
+    const cartTotalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
+    const grandTotal = cartTotalJual + state.adjustment;
+    const elTotal = document.getElementById('ct-total');
+    const elLaba = document.getElementById('ct-laba');
+    if (elTotal) elTotal.textContent = rupiah(grandTotal);
+    if (elLaba) { elLaba.textContent = rupiah(grandTotal - cartTotalHpp); elLaba.className = 'v ' + (grandTotal - cartTotalHpp >= 0 ? 'positive' : 'negative'); }
+    return;
+  }
   if (t.id === 'input-platform') return; // handled on change
   if (t.dataset.cartPrice !== undefined) {
     state.cart[+t.dataset.cartPrice].hargaJual = numOnly(t.value);
@@ -772,11 +915,10 @@ document.addEventListener('input', (e) => {
   }
   if (t.id === 'lap-tanggal') { state.laporanTanggal = t.value; render(); return; }
 
-  // form menu -> live update HPP preview
+  // form menu -> live update HPP preview TANPA re-render (biar fokus tidak hilang)
   if (['mf-nama', 'mf-kategori', 'mf-margin', 'mf-harga-manual'].includes(t.id) || t.dataset.resepBahan !== undefined || t.dataset.resepQty !== undefined) {
     syncMenuDraftFromDom();
-    refreshSheet(renderMenuFormSheet());
-    // fokus kembali kalau perlu (opsional, dilewati demi simple)
+    updateMenuPreviewFromDom();
     return;
   }
 
@@ -795,6 +937,11 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   const t = e.target;
+  if (t.dataset.cartPrice !== undefined) {
+    // harga satuan diubah manual -> refresh total setelah selesai mengetik
+    renderCartRegion();
+    return;
+  }
   if (t.id === 'input-platform') {
     state.platform = t.value;
     // update default harga item yang belum diubah manual? sederhanakan: biarkan user edit manual.
@@ -829,6 +976,23 @@ function syncMenuDraftFromDom() {
   document.querySelectorAll('[data-resep-qty]').forEach(el => {
     d.resep[+el.dataset.resepQty].qty = el.value;
   });
+}
+
+function updateMenuPreviewFromDom() {
+  const d = state.menuFormDraft;
+  const bahanList = getBahanList();
+  const hpp = d.resep.reduce((s, r) => {
+    const b = bahanList.find(x => x.id === r.bahanId);
+    return s + (b ? Number(b.hargaAvco ?? b.hargaTerakhir ?? 0) : 0) * Number(r.qty || 0);
+  }, 0);
+  const settings = getSettings();
+  const adminFirst = settings.platforms.find(p => p.nama !== 'Offline')?.adminPercent || 0;
+  const elHpp = document.getElementById('mf-hpp');
+  const elOff = document.getElementById('mf-saran-offline');
+  const elOn = document.getElementById('mf-saran-online');
+  if (elHpp) elHpp.textContent = rupiah(hpp);
+  if (elOff) elOff.textContent = rupiah(hitungHargaSaran(hpp, d.marginPercent, 0));
+  if (elOn) elOn.textContent = rupiah(hitungHargaSaran(hpp, d.marginPercent, adminFirst));
 }
 
 async function saveMenuForm() {
@@ -956,6 +1120,7 @@ async function saveAsetForm() {
 
 async function saveSettingsForm() {
   const s = getSettings();
+  s.id = s.id || 'settings-1';
   s.defaultMarginPercent = numOnly(document.getElementById('set-margin').value);
   document.querySelectorAll('[data-platform-nama]').forEach(el => {
     s.platforms[+el.dataset.platformNama].nama = el.value.trim();
@@ -963,7 +1128,7 @@ async function saveSettingsForm() {
   document.querySelectorAll('[data-platform-admin]').forEach(el => {
     s.platforms[+el.dataset.platformAdmin].adminPercent = numOnly(el.value);
   });
-  await Store.update('Settings', s.id || 'settings-1', s);
+  await Store.update('Settings', s.id, s);
   toast('Pengaturan disimpan ✓');
   render();
 }
