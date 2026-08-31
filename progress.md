@@ -22,6 +22,14 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — FASE UX: Kasir Lebih Halus + Transaksi di Modal Bayar
+- [UX] **Transaksi disimpan di modal bayar, bukan saat checkout**: checkout = staging (turunkan stok + simpan draft). Klik **Bayar** di modal baru insert ke sheet. **Batal/✕** = rollback stok + kembali ke keranjang (bisa tambah menu). Proteksi double-checkout (`checkingOut`). `js/app.js`
+- [UX] **Tombol hapus keranjang** diperbesar & proporsional (`.btn-del-item`), stepper `.q-ctrl` rapi. Harga coret diskon per-item. `css/style.css`
+- [UX] **Search menu di kasir** (input live, filter nama+kategori). `state.cartSearch`.
+- [UX] **Kategori grup otomatis** di kasir (chips generate dari menu) + histori kategori otomatis dipilih.
+- [UX] **Diskon di keranjang**: subtotal, coret harga normal tiap item, baris diskon transaksi (promo). `js/app.js`
+- [FEAT] **Mode Gelap**: toggle slide di Pengaturan (`data-theme="dark"`, persist localStorage, `--bar` bg). `css/style.css`
+
 ### 2026-08-30 — FASE 1.5: Hardening Penyimpanan Penjualan (bisa hilang?)
 
 **Masalah ditemukan:** transaksi checkout bisa “hilang” dari Google Sheet. Akar masalah:

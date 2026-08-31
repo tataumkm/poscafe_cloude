@@ -386,6 +386,13 @@ input:focus, select:focus, textarea:focus {
 }
 .pay-kb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
 .pay-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+.search-bar-wrap { padding: 10px 0; position: sticky; top: 0; background: var(--bg); z-index: 5; }
+.search-bar {
+  width: 100%; padding: 11px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: 14.5px; font-family: var(--font-body); color: var(--ink);
+}
+
 .pay-key {
   padding: 16px 0;
   border: 1px solid var(--line);
@@ -399,6 +406,22 @@ input:focus, select:focus, textarea:focus {
 .pay-key:active { background: var(--line); }
 .pay-actions { display: flex; gap: 8px; margin-top: 8px; }
 .pay-actions .btn { flex: 1; }
+.item-line .coret { color: var(--ink-dim); text-decoration: line-through; font-size: 11px; opacity: 0.7; }
+.item-line .coret.small { font-size: 11px; }
+.coret { color: var(--ink-dim); text-decoration: line-through; opacity: 0.7; font-size: 12px; }
+.coret.small { font-size: 11px; }
+button:disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: auto; }
+.q-ctrl {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: 16px; cursor: pointer; padding: 0; line-height: 1;
+}
+.btn-del-item {
+  width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid var(--negative); color: var(--negative);
+  background: var(--warn-bg); font-size: 16px; cursor: pointer;
+  flex-shrink: 0;
+}
 
 /* ---------- Toggle switch (slide/geser) ---------- */
 .toggle-row {
