@@ -22,6 +22,37 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — FASE 4: Mode Gelap + PWA Installable
+- [FEAT] **Mode Gelap**: toggle slide di Pengaturan → persist localStorage → `[data-theme="dark"]` + override CSS variabel. `--bar` baru untuk topbar/bottomnav (tetap gelap di dark mode). `css/style.css`, `js/app.js`
+- [FEAT] **PWA installable**: `manifest.webmanifest` + `<link rel="manifest">` + meta `apple-mobile-web-app-capable`. Ikon SVG inline. `index.html`
+
+### 2026-08-30 — FASE 3: Promo Otomatis (diskon bertanggal)
+- [FEAT] **Sistem promo otomatis** (sheet `Promo` backend). Dua tipe: promo transaksi (diskon dari subtotal) & promo menu (diskon dari harga jual). Jenis: persen atau rupiah. Berlaku otomatis sesuai rentang tanggal. `js/app.js`
+- [FEAT] **Halaman Promo**: CRUD promo (tambah/edit/hapus). Form dengan nama, tipe (transaksi/menu), jenis, nilai, rentang tanggal, status aktif. `js/app.js`
+- [FEAT] **Kasir integrasi promo**: harga jual menu otomatis terdiskon jika ada promo aktif. "PROMO" badge + harga coret ditampilkan. Subtotal → diskon transaksi → adjustment → total. Transaksi menyimpan `diskon`. `js/app.js`
+- [FEAT] **Promo terbesar**: bila beberapa promo transaksi aktif bertumpuk, dipakai yang terbesar. `js/app.js`
+
+### 2026-08-30 — FASE 2: Tombol Uang Cepat
+- [FEAT] **Tombol nominal cepat** di sheet pembayaran: 50k / 100k / 150k / Pas. Tambah baris `pay-quick`. `js/app.js`, `css/style.css`
+
+### 2026-08-30 — FASE 1: Fondasi & Keandalan (F1–F5)
+- [F1] **Nomor invoice otomatis** `INV-YYYYMMDD-0001` (urutan per tanggal). Ditampilkan di struk (print dialog + ESC/POS). `js/app.js`, `js/ble.js`
+- [F2] **Pulihkan item soft-deleted**: halaman Lainnya → "Pulihkan Item Terhapus" → listing Menu & Bahan `deleted` + tombol Pulihkan. `js/app.js`
+- [F3] **Opname Kas**: Laporan → Akuntansi → input Kas Fisik + Keterangan, hitung selisih (kas teori vs fisik), riwayat opname. Tersimpan ke sheet baru **`Kas`**. `js/app.js`
+- [F4] **Backup/restore lokal**: Download semua data JSON + Import (muat ulang). `js/app.js`, `index.html`
+- [F5] **Export CSV** laporan harian (`penjualan-YYYY-MM-DD.csv`). `js/app.js`
+- [NEW] Sheet backend **`Kas`** & **`Promo`** ditambahkan ke `SHEETS` (config.js + code.gs). `setup()` otomatis buat. Jalankan ulang deployment Apps Script + `setup()`.
+
+### 2026-08-30 — Master Toggle Print (slide) + Riwayat Transaksi
+- [FEAT] Toggle **"Aktifkan Fitur Print"** (gaya slide/geser) sebagai saklar master. OFF → transaksi selesai **tanpa cetak sama sekali** (tanpa dialog/cek). ON → opsi status/cetak BLE/tombol muncul. `js/app.js`, `css/style.css`
+- [FEAT] Slide switch `:root` `.switch`/`.slider` menggantikan checkbox lama.
+- [FEAT] **Riwayat Transaksi**: tombol **"Semua Riwayat Transaksi"** di Laporan → Penjualan Harian → buka sheet berisi **seluruh** transaksi (tidak dibatasi tanggal, terbaru di atas) + ringkasan total + tombol **Cetak Ulang Struk** tiap item. `openRiwayat()`. `js/app.js`
+
+### 2026-08-30 — Perbaiki Alur Cetak: Share Sheet DIGANTI Print Dialog
+- [FIX] Saat toggle "Cetak Langsung" OFF, bayar **tidak lagi membuka Web Share** (mengganggu). Kini langsung `window.print()` (dialog print standar).
+- [FIX] Fallback jalur A (BLE gagal/koneksi putus) juga langsung ke `window.print()`, bukan share.
+- [NOTE] Struk teks (`strukText`) dipertahankan sebagai util untuk opsi share eksplisit di masa depan (belum dipakai).
+
 ### 2026-08-30 — Cetak Langsung Printer Bluetooth (ESC/POS) + Fallback
 - [FEAT] Modul baru `js/ble.js`: **Web Bluetooth + ESC/POS**. Connect printer BT thermal, kirim byte langsung (tanpa dialog preview), test print, persist device.
 - [FEAT] Orkestrasi cetak 3 jalur (`printReceipt`): **A)** printer BLE langsung (bila toggle aktif & terkoneksi) → **B)** Web Share (share struk teks ke app printer) → **C)** `window.print()` dialog. `js/app.js`

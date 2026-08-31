@@ -25,7 +25,7 @@
  * Ini sudah diatur otomatis di js/app.js, tidak perlu diubah.
  */
 
-const SHEETS = ['Modal', 'Aset', 'BelanjaBahan', 'Bahan', 'Menu', 'Penjualan', 'Settings'];
+const SHEETS = ['Modal', 'Aset', 'BelanjaBahan', 'Bahan', 'Menu', 'Penjualan', 'Settings', 'Kas', 'Promo'];
 const CACHE_TTL_SECONDS = 20; // cache tiap sheet 20 detik -> tahan traffic tinggi
 
 // ============ ENTRY POINTS ============

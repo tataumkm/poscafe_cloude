@@ -1,7 +1,10 @@
 import { Api } from './api.js';
 import { Store } from './store.js';
+import { SHEETS } from './config.js';
 import { rupiah, numOnly, todayStr, nowTimeStr, formatTanggal, hitungHpp, hitungHargaSaran, hitungAvco, uid, toast } from './utils.js';
 import { isBleSupported, isPrinterConnected, getPrinterName, connectPrinter, disconnectPrinter, printBytes, testPrint, buildEscPos } from './ble.js';
+
+const OBJECT_SHEETS = SHEETS.filter(s => s !== 'Settings');
 
 // ============ STATE GLOBAL ============
 const state = {
@@ -16,13 +19,15 @@ const state = {
   akuntansiPeriode: 'bulan',
   menuFormDraft: null,  // dipakai saat tambah/edit menu
   bahanFormEditingId: null,
-  lastTrx: null
+  lastTrx: null,
+  lastKasTeori: 0
 };
 
 const $app = document.getElementById('app');
 
 // ============ INIT ============
 async function init() {
+  setTheme(getTheme());
   Store.loadFromLocal();
   render();
   await Store.syncAll(true);
@@ -37,12 +42,157 @@ function getSettings() {
   return s || { defaultMarginPercent: 40, platforms: [{ nama: 'Offline', adminPercent: 0 }] };
 }
 function getPrintPref() {
-  try { return JSON.parse(localStorage.getItem('cafeku_print_pref') || '{}'); }
-  catch (e) { return {}; }
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem('cafeku_print_pref') || '{}') || {}; } catch (e) {}
+  // normalisasi default: print aktif, metode dialog (manual)
+  if (p.on === undefined) p.on = true;
+  if (!p.mode) p.mode = 'manual';
+  return p;
 }
 function setPrintPref(p) { localStorage.setItem('cafeku_print_pref', JSON.stringify(p)); }
+
+// ============ TEMA (mode gelap) ============
+function getTheme() { return localStorage.getItem('cafeku_theme') || 'light'; }
+function setTheme(t) {
+  localStorage.setItem('cafeku_theme', t);
+  document.documentElement.setAttribute('data-theme', t);
+}
 function getBahanList() { return Store.get('Bahan'); }
 function getMenuList() { return Store.get('Menu'); }
+
+// ============ PROMO OTOMATIS (diskon bertanggal) ============
+function promoAktifHariIni() {
+  const t = todayStr();
+  return Store.get('Promo').filter(p => p.aktif !== false
+    && (!p.tglMulai || p.tglMulai <= t) && (!p.tglSelesai || t <= p.tglSelesai));
+}
+function potonganPromo(promo, base) {
+  return promo.jenis === 'persen' ? base * (Number(promo.nilai) / 100) : Number(promo.nilai);
+}
+// Diskon transaksi: ambil potongan TERBESAR dari semua promo transaksi aktif
+function diskonTransaksi(subtotal) {
+  const promos = promoAktifHariIni().filter(p => p.tipe === 'transaksi');
+  if (!promos.length) return 0;
+  return Math.max(...promos.map(p => {
+    const v = potonganPromo(p, subtotal);
+    return p.jenis === 'persen' ? Math.min(v, subtotal) : v;
+  }));
+}
+// Harga jual efektif per menu (promo menu). Memakai harga maks sebagai harga normal.
+// Harga jual efektif per menu dari promo (persen atau rupiah). Menu harga tetap diabaikan.
+function promoMenuTerpilih(menu) {
+  const promos = promoAktifHariIni().filter(p => p.tipe === 'menu' && (!p.menuId || p.menuId === menu.id));
+  if (!promos.length) return null;
+  // pilih promo dengan persen diskon tertinggi (atau nilai rp tertinggi), konsisten
+  return promos.sort((a, b) => {
+    const na = a.jenis === 'persen' ? Number(a.nilai) : 0;
+    const nb = b.jenis === 'persen' ? Number(b.nilai) : 0;
+    return nb - na;
+  })[0];
+}
+function hargaJualEfektif(menu, hargaSaran) {
+  if (menu.hargaJualManual) return hargaSaran; // promo menu diabaikan utk harga tetap
+  const promo = promoMenuTerpilih(menu);
+  if (!promo) return hargaSaran;
+  if (promo.jenis === 'persen') return Math.max(0, hargaSaran * (1 - Number(promo.nilai) / 100));
+  return Math.max(0, hargaSaran - Number(promo.nilai)); // rupiah
+}
+
+// ============ UI PROMO (CRUD) ============
+function renderPromoList() {
+  const list = Store.get('Promo');
+  if (!list.length) return '<div class="hint" style="margin-top:8px">Belum ada promo.</div>';
+  return list.map(p => {
+    const menuName = p.tipe === 'menu' ? (getMenuList().find(m => m.id === p.menuId) || {}).nama || '(menu terhapus)' : 'Transaksi';
+    const jenis = p.jenis === 'persen' ? p.nilai + '%' : rupiah(p.nilai);
+    const status = (p.aktif === false) ? ' <span class="badge low">Nonaktif</span>' : '';
+    const range = (p.tglMulai || '?') + ' s/d ' + (p.tglSelesai || 'selamanya');
+    return `
+      <div class="row" style="margin-top:8px;align-items:flex-start">
+        <div>
+          <div class="name" style="font-weight:600;font-size:13px">${escapeHtml(p.nama)}${status}</div>
+          <div class="hint">${menuName} · ${jenis}<br>${range}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" data-promo-edit="${p.id}">Edit</button>
+          <button class="btn btn-danger btn-sm" data-promo-del="${p.id}">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openPromoForm(id) {
+  const existing = id ? Store.get('Promo').find(p => p.id === id) : null;
+  const d = existing || { nama: '', tipe: 'transaksi', jenis: 'persen', nilai: 10, tglMulai: todayStr(), tglSelesai: '', menuId: '', aktif: true };
+  const menuOpts = getMenuList().map(m => `<option value="${m.id}" ${d.menuId === m.id ? 'selected' : ''}>${escapeHtml(m.nama)}</option>`).join('');
+  openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>${id ? 'Edit' : 'Tambah'} Promo</h2><button class="btn-icon" data-close-sheet>✕</button></div>
+    <label>Nama Promo</label><input id="pr-nama" value="${escapeAttr(d.nama)}" placeholder="mis. Promo Ramadhan" />
+    <label>Tipe</label>
+    <select id="pr-tipe">
+      <option value="transaksi" ${d.tipe === 'transaksi' ? 'selected' : ''}>Diskon Transaksi (semua pesanan)</option>
+      <option value="menu" ${d.tipe === 'menu' ? 'selected' : ''}>Diskon Menu Tertentu</option>
+    </select>
+    <div id="pr-menu-wrap" style="display:${d.tipe === 'menu' ? 'block' : 'none'}">
+      <label>Menu</label>
+      <select id="pr-menu">${menuOpts}</select>
+    </div>
+    <div class="field-row">
+      <div><label>Jenis</label>
+        <select id="pr-jenis">
+          <option value="persen" ${d.jenis === 'persen' ? 'selected' : ''}>Persen (%)</option>
+          <option value="rp" ${d.jenis !== 'persen' ? 'selected' : ''}>Rupiah (Rp)</option>
+        </select>
+      </div>
+      <div><label>Nilai</label><input type="number" id="pr-nilai" value="${d.nilai}" /></div>
+    </div>
+    <div class="hint" id="pr-jenis-hint">${d.tipe === 'transaksi' ? 'Persen dari subtotal transaksi.' : 'Persen dari harga jual menu.'}</div>
+    <div class="field-row">
+      <div><label>Mulai</label><input type="date" id="pr-mulai" value="${d.tglMulai || ''}" /></div>
+      <div><label>Selesai (kosongkan = selamanya)</label><input type="date" id="pr-selesai" value="${d.tglSelesai || ''}" /></div>
+    </div>
+    <label class="switch-row" style="margin-top:8px"><input type="checkbox" id="pr-aktif" ${d.aktif !== false ? 'checked' : ''} /><span>Aktif</span></label>
+    <button class="btn btn-primary" data-save-promo="${d.id || ''}" style="margin-top:12px">Simpan Promo</button>
+  `, 'promo-form');
+}
+
+async function savePromo() {
+  const id = document.querySelector('[data-save-promo]')?.dataset.savePromo || '';
+  const nama = document.getElementById('pr-nama').value.trim();
+  if (!nama) { toast('Nama promo wajib diisi'); return; }
+  const tipe = document.getElementById('pr-tipe').value;
+  const jenis = document.getElementById('pr-jenis').value;
+  const nilai = numOnly(document.getElementById('pr-nilai').value);
+  const data = {
+    nama, tipe, jenis, nilai,
+    tglMulai: document.getElementById('pr-mulai').value || '',
+    tglSelesai: document.getElementById('pr-selesai').value || '',
+    menuId: tipe === 'menu' ? document.getElementById('pr-menu').value : '',
+    aktif: document.getElementById('pr-aktif').checked
+  };
+  if (id) await Store.update('Promo', id, data);
+  else await Store.insert('Promo', data);
+  closeSheet();
+  toast('Promo disimpan ✓');
+  render();
+}
+
+function updatePromoHint() {
+  const el = document.getElementById('pr-jenis-hint');
+  if (!el) return;
+  const tipe = document.getElementById('pr-tipe')?.value;
+  el.textContent = tipe === 'transaksi'
+    ? 'Persen/rupiah dipotong dari subtotal seluruh transaksi.'
+    : 'Persen/rupiah dipotong dari harga jual menu tersebut (hanya harga saran).';
+}
+
+// Nomor invoice berurutan per tanggal: INV-YYYYMMDD-0001
+function nextInvoiceNo() {
+  const tgl = todayStr().replace(/-/g, '');
+  const jml = Store.get('Penjualan').filter(p => (p.tanggal || '').replace(/-/g, '') === tgl).length + 1;
+  return 'INV-' + tgl + '-' + String(jml).padStart(4, '0');
+}
 
 function filterByPeriode(list, tanggalField, periode) {
   const now = new Date();
@@ -128,15 +278,20 @@ function renderKasir() {
     <div class="section-title">Pilih Menu</div>
     ${filtered.length === 0 ? `<div class="empty">☕<div class="big-icon"></div>Belum ada menu. Tambah dulu di tab Menu.</div>` : `
     <div class="card" style="padding:6px 14px">
-      ${filtered.map(m => `
+      ${filtered.map(m => {
+        const hpp = hitungHpp(m, getBahanList());
+        const saran = m.hargaJualManual || hitungHargaSaran(hpp, m.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform));
+        const efektif = hargaJualEfektif(m, saran);
+        const adaDiskon = efektif < saran;
+        return `
         <div class="item-line" data-pick-menu="${m.id}" style="cursor:pointer">
           <div>
-            <div class="name">${escapeHtml(m.nama)}</div>
-            <div class="sub">${m.kategori || ''} · HPP ${rupiah(hitungHpp(m, getBahanList()))}</div>
+            <div class="name">${escapeHtml(m.nama)}${adaDiskon ? ' <span class="badge low">PROMO</span>' : ''}</div>
+            <div class="sub">${m.kategori || ''} · HPP ${rupiah(hpp)}</div>
           </div>
-          <div class="amt">${rupiah(m.hargaJualManual || hitungHargaSaran(hitungHpp(m, getBahanList()), m.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform)))}</div>
-        </div>
-      `).join('')}
+          <div class="amt">${adaDiskon ? `<span class="coret">${rupiah(Math.round(saran))}</span> <b>${rupiah(Math.round(efektif))}</b>` : rupiah(Math.round(efektif))}</div>
+        </div>`;
+      }).join('')}
     </div>`}
 
     <div class="section-title" id="cart-title">Keranjang ${state.cart.length ? `(${state.cart.length})` : ''}</div>
@@ -206,10 +361,11 @@ function addToCart(menuId) {
   if (!menu) return;
   const hpp = hitungHpp(menu, getBahanList());
   const settings = getSettings();
-  const hargaDefault = menu.hargaJualManual || hitungHargaSaran(hpp, menu.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform));
+  const hargaNormal = menu.hargaJualManual || hitungHargaSaran(hpp, menu.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform));
+  const hargaJual = hargaJualEfektif(menu, hargaNormal);
   const existing = state.cart.find(c => c.menuId === menuId);
   if (existing) { existing.qty += 1; }
-  else { state.cart.push({ menuId, nama: menu.nama, qty: 1, hargaJual: hargaDefault, hpp }); }
+  else { state.cart.push({ menuId, nama: menu.nama, qty: 1, hargaJual: Math.round(hargaJual), hargaNormal: Math.round(hargaNormal), hpp }); }
   renderCartRegion();
 }
 
@@ -217,7 +373,8 @@ async function checkout() {
   if (!state.cart.length) return;
   const totalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
   const totalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
-  const total = totalJual + Number(state.adjustment || 0);
+  const diskon = diskonTransaksi(totalJual);
+  const total = totalJual - diskon + Number(state.adjustment || 0);
 
   // Kurangi stok bahan sesuai resep tiap menu yang terjual
   const bahanList = getBahanList();
@@ -253,11 +410,13 @@ async function checkout() {
 
   const transaksi = {
     id: uid(),
+    noInvoice: nextInvoiceNo(),
     tanggal: todayStr(),
     waktu: nowTimeStr(),
     platform: state.platform,
     items: state.cart.map(c => ({ menuId: c.menuId, nama: c.nama, qty: c.qty, hargaJual: c.hargaJual, hpp: c.hpp })),
     subtotal: totalJual,
+    diskon,
     adjustment: Number(state.adjustment || 0),
     total,
     totalHpp,
@@ -285,6 +444,12 @@ function openPaymentSheet(trx) {
     <div class="row"><span class="k">Total Tagihan</span><span class="v big" id="pay-total">${rupiah(total)}</span></div>
     <label>Uang Diterima</label>
     <div class="pay-display" id="pay-display">${rupiah(payValue())}</div>
+    <div class="pay-quick">
+      <button class="pay-key" data-pay-amount="50000">50k</button>
+      <button class="pay-key" data-pay-amount="100000">100k</button>
+      <button class="pay-key" data-pay-amount="150000">150k</button>
+      <button class="pay-key" data-pay-exact>Pas</button>
+    </div>
     <div class="pay-kb">
       ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="pay-key" data-pay-key="${n}">${n}</button>`).join('')}
     </div>
@@ -324,7 +489,8 @@ function doPay() {
   const bayar = payValue() > 0 ? payValue() : total;
   closeSheet();
   state.lastTrx = null;
-  printReceipt(trx, bayar);
+  if (getPrintPref().on) printReceipt(trx, bayar);
+  else toast('Transaksi selesai ✓');
 }
 
 function closePayment() {
@@ -334,16 +500,16 @@ function closePayment() {
 
 function printReceipt(trx, bayar) {
   const pref = getPrintPref();
-  const text = strukText(trx, bayar);
 
   // JALUR A: Cetak langsung via printer Bluetooth (tanpa dialog) bila aktif & terkoneksi
   if (pref.mode === 'ble' && isBleSupported() && isPrinterConnected()) {
     printReceiptBLE(trx, bayar).then(ok => {
-      if (!ok) fallbackPrint(trx, bayar, text);
+      if (!ok) printDialog(trx, bayar);
     });
     return;
   }
-  fallbackPrint(trx, bayar, text);
+  // JALUR C: window.print() (default & fallback paling stabil)
+  printDialog(trx, bayar);
 }
 
 async function printReceiptBLE(trx, bayar) {
@@ -354,16 +520,6 @@ async function printReceiptBLE(trx, bayar) {
   } catch (err) {
     toast('Printer gagal: ' + err.message);
     return false;
-  }
-}
-
-// JALUR B: Web Share (share ke app printer) -> JALUR C: window.print()
-function fallbackPrint(trx, bayar, text) {
-  if (typeof navigator.share === 'function') {
-    navigator.share({ title: 'Struk ' + (trx.namaToko || 'Cafeku'), text })
-      .catch(() => { printDialog(text); });
-  } else {
-    printDialog(text);
   }
 }
 
@@ -381,6 +537,7 @@ function printDialog(trx, bayar, text) {
   const html = `
     <div class="pr-center"><b>${shopName}</b></div>
     <div class="pr-center">STRUK KASIR</div>
+    <div class="pr-center">${escapeHtml(trx.noInvoice || '')}</div>
     <div class="pr-row"><span>Tanggal</span><span>${formatTanggal(trx.tanggal)}</span></div>
     <div class="pr-row"><span>Jam</span><span>${trx.waktu}</span></div>
     <div class="pr-row"><span>Platform</span><span>${escapeHtml(trx.platform || 'Offline')}</span></div>
@@ -388,6 +545,7 @@ function printDialog(trx, bayar, text) {
     ${itemRows}
     <div class="pr-divider"></div>
     <div class="pr-row"><span>Subtotal</span><span>${rupiah(trx.subtotal)}</span></div>
+    ${Number(trx.diskon) ? `<div class="pr-row"><span>Diskon</span><span>−${rupiah(trx.diskon)}</span></div>` : ''}
     ${Number(trx.adjustment) ? `<div class="pr-row"><span>Penyesuaian</span><span>${rupiah(trx.adjustment)}</span></div>` : ''}
     <div class="pr-row pr-big"><span><b>TOTAL</b></span><span><b>${rupiah(trx.total)}</b></span></div>
     <div class="pr-row"><span>Dibayar</span><span>${rupiah(bayar)}</span></div>
@@ -710,6 +868,8 @@ function renderLaporanHarian() {
   return `
     <label style="margin-top:12px">Pilih Tanggal</label>
     <input type="date" id="lap-tanggal" value="${state.laporanTanggal}" />
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-open-riwayat>📋 Semua Riwayat Transaksi</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-export-csv>⬇️ Export CSV (tanggal ini)</button>
 
     <div class="card" style="margin-top:12px">
       <div class="row"><span class="k">Jumlah Transaksi</span><span class="v">${trx.length}</span></div>
@@ -736,6 +896,29 @@ function renderLaporanHarian() {
   `;
 }
 
+// Semua riwayat transaksi (tidak dibatasi tanggal), urutan terbaru di atas
+function openRiwayat() {
+  const all = Store.get('Penjualan').slice().reverse();
+  const totalOmzet = all.reduce((s, t) => s + Number(t.total || 0), 0);
+  const list = all.length === 0
+    ? `<div class="empty">Belum ada riwayat transaksi.</div>`
+    : all.map(t => `
+      <div class="card">
+        <div class="row"><span class="k">${formatTanggal(t.tanggal)} ${t.waktu} · ${escapeHtml(t.platform || 'Offline')}</span><span class="v">${rupiah(t.total)}</span></div>
+        ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">🖨 Cetak Ulang Struk</button>
+      </div>`).join('');
+  openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Riwayat Transaksi</h2><button class="btn-icon" data-close-sheet>✕</button></div>
+    <div class="card" style="background:var(--warn-bg);border:none">
+      <div class="row"><span class="k">Total Transaksi</span><span class="v">${all.length}</span></div>
+      <div class="row"><span class="k">Total Omzet</span><span class="v big">${rupiah(totalOmzet)}</span></div>
+    </div>
+    ${list}
+  `, 'riwayat');
+}
+
 function renderAkuntansi() {
   const periode = state.akuntansiPeriode;
   const modalAll = Store.get('Modal');
@@ -748,6 +931,7 @@ function renderAkuntansi() {
   const totalBelanjaAll = belanjaAll.reduce((s, b) => s + Number(b.total || 0), 0);
   const totalPenjualanAll = penjualanAll.reduce((s, p) => s + Number(p.total || 0), 0);
   const kas = totalModal + totalPenjualanAll - totalBelanjaAll - totalAset;
+  state.lastKasTeori = kas;
 
   const penjualanPeriode = filterByPeriode(penjualanAll, 'tanggal', periode);
   const omzetPeriode = penjualanPeriode.reduce((s, p) => s + Number(p.total || 0), 0);
@@ -765,6 +949,18 @@ function renderAkuntansi() {
       <hr class="receipt-divider" />
       <div class="row"><span class="k">Estimasi Kas Saat Ini</span><span class="v big ${kas >= 0 ? 'positive' : 'negative'}">${rupiah(kas)}</span></div>
       <div class="hint">Kas = Modal + Penjualan − Belanja Bahan − Aset (perkiraan kas tunai, belum termasuk piutang/hutang).</div>
+    </div>
+
+    <div class="section-title">Opname Kas</div>
+    <div class="card">
+      <div class="row"><span class="k">Kas Teori</span><span class="v big">${rupiah(kas)}</span></div>
+      <label>Kas Fisik (hasil hitung)</label>
+      <input type="number" id="op-kas-fisik" value="${opnameKasFisik()}" placeholder="0" />
+      <label>Keterangan (opsional)</label>
+      <input id="op-ket" placeholder="mis. setoran hari ini" />
+      <button class="btn btn-primary" data-save-opname style="margin-top:10px">Simpan Opname Kas</button>
+      <div class="hint">Selisih = Kas Fisik − Kas Teori. Positif = lebih, negatif = kurang.</div>
+      ${opnameRiwayat()}
     </div>
 
     <div class="section-title">Laba Rugi</div>
@@ -786,6 +982,30 @@ function renderAkuntansi() {
 // =========================================================
 // HALAMAN 5: LAINNYA (Modal, Aset, Pengaturan)
 // =========================================================
+function opnameKasFisik() {
+  const rec = Store.get('Kas').find(k => k.tanggal === todayStr());
+  return rec ? (rec.kasFisik || '') : '';
+}
+function opnameRiwayat() {
+  const riw = Store.get('Kas').slice().reverse().slice(0, 10);
+  if (!riw.length) return '<div class="hint" style="margin-top:10px">Belum ada opname.</div>';
+  return `<div class="section-title" style="margin-top:12px">Riwayat Opname</div>` + riw.map(r => `
+    <div class="row"><span class="k">${formatTanggal(r.tanggal)}</span>
+    <span class="v" style="font-size:12px">${rupiah(r.kasFisik)} · selisih ${r.selisih >= 0 ? '+' + rupiah(r.selisih) : rupiah(r.selisih)}</span></div>`).join('');
+}
+async function saveOpname() {
+  const kasTeori = Number(state.lastKasTeori);
+  const kasFisik = numOnly(document.getElementById('op-kas-fisik')?.value);
+  const ket = document.getElementById('op-ket')?.value.trim() || '';
+  const selisih = kasFisik - kasTeori;
+  const existing = Store.get('Kas').find(k => k.tanggal === todayStr());
+  const data = { tanggal: todayStr(), kasTeori, kasFisik, selisih, keterangan: ket };
+  if (existing) await Store.update('Kas', existing.id, data);
+  else await Store.insert('Kas', data);
+  closeSheet();
+  toast('Opname kas disimpan ✓');
+  render();
+}
 function renderLainnyaPage() {
   const modalList = Store.get('Modal').slice().reverse();
   const asetList = Store.get('Aset').slice().reverse();
@@ -808,6 +1028,20 @@ function renderLainnyaPage() {
       </div>
     `).join('')}
 
+    <div class="section-title" style="margin-top:10px">Data &amp; Keamanan</div>
+    <div class="card">
+      <button class="btn btn-ghost" data-open-restore>♻️ Pulihkan Item Terhapus</button>
+      <button class="btn btn-ghost" style="margin-top:8px" data-backup>⬇️ Download Backup (JSON)</button>
+      <button class="btn btn-ghost" style="margin-top:8px" id="btn-restore-import">⬆️ Import Backup</button>
+    </div>
+
+    <div class="section-title" style="margin-top:10px">Promo &amp; Diskon</div>
+    <div class="card">
+      <button class="btn btn-primary btn-sm" data-promo-new>+ Tambah Promo</button>
+      ${renderPromoList()}
+      <div class="hint">Promo berlaku otomatis di kasir sesuai rentang tanggal. Aturan: promo menu hanya untuk harga saran (menu dengan harga tetap diabaikan); bila beberapa promo transaksi aktif, dipakai yang terbesar.</div>
+    </div>
+
     <div class="section-title" style="margin-top:10px">Pengaturan</div>
     <div class="card">
       <label>Margin Default (%)</label>
@@ -820,6 +1054,13 @@ function renderLainnyaPage() {
         </div>
       `).join('')}
       <button class="btn btn-ghost btn-sm" data-add-platform>+ Tambah Platform</button>
+      <div class="toggle-row" style="margin-top:10px">
+        <div><div class="toggle-title">Mode Gelap</div><div class="hint">Kurangi silau saat kafe gelap.</div></div>
+        <label class="switch">
+          <input type="checkbox" id="set-dark" data-dark-toggle ${getTheme() === 'dark' ? 'checked' : ''} />
+          <span class="slider"></span>
+        </label>
+      </div>
       <button class="btn btn-primary" data-save-settings style="margin-top:12px">Simpan Pengaturan</button>
     </div>
 
@@ -828,21 +1069,114 @@ function renderLainnyaPage() {
       <div class="hint" style="text-align:center;margin-top:6px">Data disimpan otomatis. Sinkron manual berguna kalau kamu buka di HP lain.</div>
     </div>
 
-    <div class="section-title" style="margin-top:10px">Printer Bluetooth</div>
+    <div class="section-title" style="margin-top:10px">Printer &amp; Struk</div>
     <div class="card">
-      <div class="row">
-        <span class="k">Status</span>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-title">Aktifkan Fitur Print</div>
+          <div class="hint">Matikan bila kasir tanpa cetak struk — transaksi langsung selesai tanpa dialog/cek.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="print-on" ${getPrintPref().on ? 'checked' : ''} />
+          <span class="slider"></span>
+        </label>
+      </div>
+      ${getPrintPref().on ? `
+      <div class="row" style="margin-top:10px">
+        <span class="k">Status Printer</span>
         <span class="v" id="printer-status">${isBleSupported() ? (isPrinterConnected() ? 'Terkoneksi: ' + getPrinterName() : 'Belum terkoneksi') : 'Web Bluetooth tidak didukung (butuh Android + Chrome)'}</span>
       </div>
-      <label style="margin-top:8px">Cetak Langsung (tanpa preview)</label>
-      <label class="switch-row"><input type="checkbox" id="printer-auto" ${getPrintPref().mode === 'ble' ? 'checked' : ''} /><span>Gunakan printer Bluetooth otomatis saat bayar</span></label>
-      <div class="hint">Aktif: setelah tap Bayar, struk langsung terkirim ke printer — tanpa jendela preview. Cetak ulang via share/dialog tetap tersedia sebagai cadangan.</div>
+      <div class="toggle-row" style="margin-top:6px">
+        <div>
+          <div class="toggle-title">Cetak Langsung (tanpa preview)</div>
+          <div class="hint">Aktif: struk langsung terkirim ke printer Bluetooth saat Bayar, tanpa jendela preview. Nonaktif: muncul dialog print standar.</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="printer-auto" ${getPrintPref().mode === 'ble' ? 'checked' : ''} ${!isBleSupported() ? 'disabled' : ''} />
+          <span class="slider"></span>
+        </label>
+      </div>
       <div class="row" style="gap:8px;margin-top:10px">
         <button class="btn btn-ghost" id="btn-printer-connect">${isPrinterConnected() ? 'Putus Koneksi' : 'Konek Printer'}</button>
         <button class="btn btn-primary" id="btn-printer-test">Test Print</button>
       </div>
+      ` : ''}
     </div>
   `;
+}
+
+function openRestore() {
+  const deletedMenu = Store.getWithDeleted('Menu').filter(m => m.deleted);
+  const deletedBahan = Store.getWithDeleted('Bahan').filter(b => b.deleted);
+  const blok = (label, list, sheet) => list.length === 0
+    ? `<div class="hint">Tidak ada ${label} terhapus.</div>`
+    : list.map(x => `
+      <div class="card">
+        <div class="row"><span class="k">${escapeHtml(x.nama || x.id)}</span><button class="btn btn-ghost btn-sm" data-restore="${sheet}|${x.id}">Pulihkan</button></div>
+        <div class="hint">Dihapus: ${x.deletedAt ? formatTanggal(x.deletedAt.slice(0,10)) : '-'}</div>
+      </div>`).join('');
+  openSheet(`
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Pulihkan Item Terhapus</h2><button class="btn-icon" data-close-sheet>✕</button></div>
+    <div class="section-title" style="margin-top:0">Menu</div>
+    ${blok('menu', deletedMenu, 'Menu')}
+    <div class="section-title">Bahan</div>
+    ${blok('bahan', deletedBahan, 'Bahan')}
+  `, 'restore');
+}
+
+function downloadBackup() {
+  const data = {};
+  OBJECT_SHEETS.forEach(s => { data[s] = Store.getWithDeleted(s); });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cafeku-backup-' + todayStr() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Backup diunduh ✓');
+}
+
+async function importBackup(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || typeof data !== 'object') throw new Error('format salah');
+    const count = Object.keys(data).length;
+    Object.keys(data).forEach(s => {
+      if (!(Store.data[s] instanceof Array)) return;
+      Store.data[s] = data[s];
+      Store.saveLocal(s);
+      // sinkronkan seluruh isi ke sheet (upsert via batch)
+      const items = data[s].map(r => ({ id: r.id, data: r }));
+      if (items.length) Store._pushBatch('batchUpdate', s, items);
+    });
+    toast('Backup diimpor ✓ (' + count + ' tabel)');
+    render();
+  } catch (err) {
+    toast('Import gagal: ' + err.message);
+  }
+}
+
+function downloadCSV(filename, headers, rows) {
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV diunduh ✓');
+}
+
+function exportCsvHarian() {
+  const trx = Store.get('Penjualan').filter(p => p.tanggal === state.laporanTanggal);
+  const rows = trx.map(t => [t.noInvoice || '', t.waktu, t.platform, (t.items || []).length, t.subtotal, t.adjustment, t.total, t.totalHpp, t.laba]);
+  downloadCSV('penjualan-' + state.laporanTanggal + '.csv',
+    ['No. Invoice', 'Waktu', 'Platform', 'Jml Item', 'Subtotal', 'Penyesuaian', 'Total', 'HPP', 'Laba'],
+    rows);
 }
 
 function openModalForm() {
@@ -906,6 +1240,7 @@ document.addEventListener('click', async (e) => {
   if (t.closest('[data-close-sheet]')) { closeSheet(); return; }
   if (t.closest('[data-close-pay]')) { closePayment(); return; }
   if (t.closest('[data-pay-cancel]')) { closePayment(); return; }
+  if (t.dataset.payAmount !== undefined) { payStr = String(Number(t.dataset.payAmount) || 0); renderPay(); return; }
   if (t.dataset.payKey !== undefined) { payStr = (payStr + t.dataset.payKey).replace(/^0+(?=\d)/, ''); renderPay(); return; }
   if (t.dataset.payBks !== undefined) { payStr = payStr.slice(0, -1); renderPay(); return; }
   if (t.dataset.payClr !== undefined) { payStr = ''; renderPay(); return; }
@@ -921,6 +1256,19 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.open === 'aset-form') return openAsetForm();
   if (t.dataset.open === 'belanja-form') return openBelanjaForm();
   if (t.dataset.open === 'menu-form') return openMenuForm(null);
+  if (t.dataset.openRiwayat !== undefined) return openRiwayat();
+  if (t.dataset.exportCsv !== undefined) return exportCsvHarian();
+  if (t.dataset.openRestore !== undefined) return openRestore();
+  if (t.dataset.backup !== undefined) return downloadBackup();
+  if (t.dataset.saveOpname !== undefined) return saveOpname();
+  if (t.id === 'btn-restore-import') { document.getElementById('import-file')?.click(); return; }
+  if (t.dataset.restore) {
+    const [sheet, id] = t.dataset.restore.split('|');
+    await Store.update(sheet, id, { deleted: false, deletedAt: null });
+    toast('Item dipulihkan ✓');
+    openRestore();
+    return;
+  }
 
   if (t.dataset.kategoriFilter) { state.menuKategoriFilter = t.dataset.kategoriFilter; render(); return; }
   if (t.dataset.laporanTab) { state.laporanTab = t.dataset.laporanTab; render(); return; }
@@ -971,6 +1319,10 @@ document.addEventListener('click', async (e) => {
     render(); return;
   }
   if (t.dataset.saveSettings !== undefined) return saveSettingsForm();
+  if (t.dataset.promoNew !== undefined) return openPromoForm(null);
+  if (t.dataset.promoEdit) return openPromoForm(t.dataset.promoEdit);
+  if (t.dataset.promoDel) { await Store.softDelete('Promo', t.dataset.promoDel); render(); return; }
+  if (t.dataset.savePromo !== undefined) return savePromo();
   if (t.id === 'btn-manual-sync') { toast('Menyinkronkan...'); await Store.syncAll(); render(); toast('Sinkron selesai ✓'); return; }
 
   if (t.id === 'btn-printer-connect') {
@@ -1037,6 +1389,26 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   const t = e.target;
+  if (t.id === 'pr-jenis') { updatePromoHint(); return; }
+  if (t.id === 'pr-tipe') {
+    const wrap = document.getElementById('pr-menu-wrap');
+    if (wrap) wrap.style.display = t.value === 'menu' ? 'block' : 'none';
+    updatePromoHint();
+    return;
+  }
+  if (t.dataset.darkToggle !== undefined) { setTheme(t.checked ? 'dark' : 'light'); return; }
+  if (t.id === 'print-on') {
+    const pref = getPrintPref();
+    pref.on = t.checked;
+    setPrintPref(pref);
+    render();
+    return;
+  }
+  if (t.id === 'import-file') {
+    if (t.files && t.files[0]) importBackup(t.files[0]);
+    t.value = '';
+    return;
+  }
   if (t.id === 'printer-auto') {
     const pref = getPrintPref();
     pref.mode = t.checked ? 'ble' : 'manual';

@@ -54,6 +54,7 @@ export function buildEscPos(trx, bayar) {
     '   ' + shop,
     '   STRUK KASIR',
     '',
+    (trx.noInvoice || ''),
     (trx.platform || 'OFFLINE')
   ];
   const body = [];
@@ -69,6 +70,7 @@ export function buildEscPos(trx, bayar) {
 
   const rows = [ln, ...body, ln,
     padRight('Subtotal', cols) + rup(trx.subtotal),
+    ...(Number(trx.diskon) ? [padRight('Diskon', cols) + '- ' + rup(trx.diskon)] : []),
     ...(Number(trx.adjustment) ? [padRight('Penyesuaian', cols) + rup(trx.adjustment)] : []),
     totalA, bayarA, kemA, ln,
     'TERIMA KASIH', 'Sampai jumpa!'
