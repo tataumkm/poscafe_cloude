@@ -246,7 +246,7 @@ function renderTopbar() {
   const pending = Store.pendingCount();
   return `
     <div class="topbar">
-      <h1><span class="dot"></span>Cafeku ${pending ? `<span style="margin-left:auto;font-size:10px;opacity:.7;font-weight:500">() menunggu sinkronisasi</span>` : ''}</h1>      <div class="stats">
+      <h1><span class="dot"></span>Cafeku ${pending ? `<span style="margin-left:auto;font-size:10px;opacity:.7;font-weight:500">⏳ ${pending} menunggu sinkronisasi</span>` : ''}</h1>      <div class="stats">
         <div class="stat"><div class="label">Estimasi Kas</div><div class="value">${rupiah(kas)}</div></div>
         <div class="stat"><div class="label">Omzet Hari Ini</div><div class="value">${rupiah(omzetHariIni())}</div></div>
       </div>
@@ -955,7 +955,7 @@ function renderLaporanHarian() {
   return `
     <label style="margin-top:12px">Pilih Tanggal</label>
     <input type="date" id="lap-tanggal" value="${state.laporanTanggal}" />
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-open-riwayat> Semua Riwayat Transaksi</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-open-riwayat>${svg("file")} Semua Riwayat Transaksi</button>
     <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-export-csv>⬇️ Export CSV (tanggal ini)</button>
 
     <div class="card" style="margin-top:12px">
@@ -977,7 +977,7 @@ function renderLaporanHarian() {
       <div class="card">
         <div class="row"><span class="k">${t.waktu} · ${t.platform}</span><span class="v">${rupiah(t.total)}</span></div>
         ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}"> Cetak Ulang Struk</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">${svg("printer")} Cetak Ulang Struk</button>
       </div>
     `).join('')}
   `;
@@ -993,7 +993,7 @@ function openRiwayat() {
       <div class="card">
         <div class="row"><span class="k">${formatTanggal(t.tanggal)} ${t.waktu} · ${escapeHtml(t.platform || 'Offline')}</span><span class="v">${rupiah(t.total)}</span></div>
         ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}"> Cetak Ulang Struk</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">${svg("printer")} Cetak Ulang Struk</button>
       </div>`).join('');
   openSheet(`
     <div class="sheet-handle"></div>
@@ -1152,7 +1152,7 @@ function renderLainnyaPage() {
     </div>
 
     <div class="card" style="margin-top:10px">
-      <button class="btn btn-ghost" id="btn-manual-sync"> Sinkron Ulang Sekarang</button>
+      <button class="btn btn-ghost" id="btn-manual-sync">${svg("sync")} Sinkron Ulang Sekarang</button>
       <div class="hint" style="text-align:center;margin-top:6px">Data disimpan otomatis. Sinkron manual berguna kalau kamu buka di HP lain.</div>
     </div>
 
