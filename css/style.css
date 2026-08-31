@@ -388,6 +388,24 @@ input:focus, select:focus, textarea:focus {
 }
 .pay-kb { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
 .pay-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+.pay-quick button {
+  padding: 14px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  color: var(--ink);
+}
+html[data-theme="dark"] .pay-quick button {
+  color: #fff;
+}
+html[data-theme="dark"] .pay-quick button:active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
 .search-bar-wrap { padding: 10px 0; position: sticky; top: 0; background: var(--bg); z-index: 5; }
 .search-bar {
   width: 100%; padding: 11px 14px; border-radius: var(--radius-sm);
@@ -404,6 +422,14 @@ input:focus, select:focus, textarea:focus {
   font-weight: 700;
   font-family: var(--font-mono);
   cursor: pointer;
+  color: var(--ink);
+}
+html[data-theme="dark"] .pay-key {
+  color: #fff;
+}
+html[data-theme="dark"] .pay-key:active {
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 .pay-key:active { background: var(--line); }
 .pay-actions { display: flex; gap: 8px; margin-top: 8px; }
