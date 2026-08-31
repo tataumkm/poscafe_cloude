@@ -30,7 +30,8 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 - [FIX] `.coret` global (coret diskon) & harga di keranjang pakai variabel dark-mode-konsisten.
 
 ### 2026-08-30 — FASE UX: Kasir Lebih Halus + Transaksi di Modal Bayar
-- [UX] **Transaksi disimpan di modal bayar, bukan saat checkout**: checkout = staging (turunkan stok + simpan draft). Klik **Bayar** di modal baru insert ke sheet. **Batal/✕** = rollback stok + kembali ke keranjang (bisa tambah menu). Proteksi double-checkout (`checkingOut`). `js/app.js`
+- [UX] **Transaksi disimpan di modal bayar, bukan saat checkout**: checkout = staging (turunkan stok + simpan draft). Klik **Bayar** di modal baru insert ke sheet. **Batal/✕** = rollback stok + kembali ke keranjang (bisa tambah menu). `js/app.js`
+- [FIX] **Buang sistem "Menunggu pembayaran"**: hapus state `checkingOut`, tombol checkout selalu aktif (kecuali keranjang kosong), hapus teks "Menunggu pembayaran…". User bisa transaksi berurutan tanpa delay. `js/app.js`
 - [UX] **Tombol hapus keranjang** diperbesar & proporsional (`.btn-del-item`), stepper `.q-ctrl` rapi. Harga coret diskon per-item. `css/style.css`
 - [UX] **Search menu di kasir** (input live, filter nama+kategori). `state.cartSearch`.
 - [UX] **Kategori grup otomatis** di kasir (chips generate dari menu) + histori kategori otomatis dipilih.

@@ -413,7 +413,7 @@ function renderCartInner() {
     </div>
     <div class="row" style="margin-top:6px"><span class="k">Total Diterima</span><span class="v big" id="ct-total">${rupiah(grandTotal)}</span></div>
     <div class="row"><span class="k">Estimasi Laba</span><span class="v ${grandTotal - cartTotalHpp >= 0 ? 'positive' : 'negative'}" id="ct-laba">${rupiah(grandTotal - cartTotalHpp)}</span></div>
-    <button class="btn btn-primary" id="btn-checkout" style="margin-top:10px" ${state.checkingOut ? 'disabled' : ''}>${state.checkingOut ? 'Menunggu Pembayaran…' : 'Selesaikan Transaksi'}</button>
+    <button class="btn btn-primary" id="btn-checkout" style="margin-top:10px">Selesaikan Transaksi</button>
   `;
 }
 
@@ -445,8 +445,6 @@ function addToCart(menuId) {
 
 async function checkout() {
   if (!state.cart.length) return;
-  if (state.checkingOut) return; // cegah double checkout
-  state.checkingOut = true;
   const totalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
   const totalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
   const diskon = diskonTransaksi(totalJual);
@@ -605,7 +603,6 @@ function closePayment() {
   state.stagedCart = null;
   state.lastDeduction = null;
   state.lastTrx = null;
-  state.checkingOut = false;
   closeSheet();
   render();
 }
