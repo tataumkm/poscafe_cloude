@@ -32,7 +32,21 @@ async function init() {
   render();
   await Store.syncAll(true);
   render();
-  setInterval(() => Store.syncAll(true).then(render), 60000);
+  await restorePendingTrx();   // kirim ulang transaksi belum sampai
+  setInterval(() => { Store.syncAll(true).then(() => restorePendingTrx()).then(render); }, 60000);
+}
+
+// Kirim ulang transaksi yang pernah checkout tapi belum tersinkronisasi ke sheet
+async function restorePendingTrx() {
+  const trx = getPendingTrx();
+  if (!trx) return;
+  // sudah ada di cache local → berarti sudah pernah masuk, tinggal bersihkan pending
+  if (Store.getById('Penjualan', trx.id)) { clearPendingTrx(); return; }
+  Store._push('insert', 'Penjualan', trx);
+  toast('Mengirim kembali transaksi yang belum terkirim…');
+  await Store._flush();
+  await new Promise(r => setTimeout(r, 1500));
+  if (Store.getById('Penjualan', trx.id)) clearPendingTrx();
 }
 Store.onChange(() => { /* render dipanggil manual supaya tidak flicker saat mengetik */ });
 
@@ -50,6 +64,12 @@ function getPrintPref() {
   return p;
 }
 function setPrintPref(p) { localStorage.setItem('cafeku_print_pref', JSON.stringify(p)); }
+
+function getPendingTrx() {
+  try { return JSON.parse(localStorage.getItem('cafeku_pending_trx') || 'null'); }
+  catch (e) { return null; }
+}
+function clearPendingTrx() { localStorage.removeItem('cafeku_pending_trx'); }
 
 // ============ TEMA (mode gelap) ============
 function getTheme() { return localStorage.getItem('cafeku_theme') || 'light'; }
@@ -428,6 +448,8 @@ async function checkout() {
   state.adjustment = 0;
   state.catatan = '';
   toast('Transaksi tersimpan ✓');
+  localStorage.setItem('cafeku_pending_trx', JSON.stringify(transaksi));
+  Store._flush();   // kirim ke sheet segera (bukan tunggu 8s)
   render();
   state.lastTrx = transaksi;
   openPaymentSheet(transaksi);
@@ -1629,5 +1651,9 @@ function escapeHtml(str) {
   return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function escapeAttr(str) { return escapeHtml(str); }
+
+window.addEventListener('store:failed', () => {
+  if (navigator.onLine) toast('⚠️ Ada data yang gagal terkirim ke sheet. Cek koneksi & sync manual.');
+});
 
 init();

@@ -151,8 +151,16 @@ function findRowById_(sheet, id) {
 function insertRow(sheetName, data) {
   const sheet = getSheet_(sheetName);
   if (!data.id) data.id = Utilities.getUuid();
-  data.createdAt = data.createdAt || new Date().toISOString();
-  sheet.appendRow([JSON.stringify(data)]);
+  const existing = findRowById_(sheet, data.id);
+  if (existing !== -1) {
+    // upsert: update bila id sudah ada (cegah duplikat saat retry)
+    data.updatedAt = new Date().toISOString();
+    sheet.getRange(existing, 1).setValue(JSON.stringify(data));
+  } else {
+    data.createdAt = data.createdAt || new Date().toISOString();
+    sheet.appendRow([JSON.stringify(data)]);
+  }
+  invalidateCache(sheetName);
   return data;
 }
 

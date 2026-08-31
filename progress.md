@@ -22,6 +22,25 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — FASE 1.5: Hardening Penyimpanan Penjualan (bisa hilang?)
+
+**Masalah ditemukan:** transaksi checkout bisa “hilang” dari Google Sheet. Akar masalah:
+1. `checkout()` reset `state.cart`/`lastTrx` ke memori **sebelum** yakin data sampai ke sheet (optimistic + tutup browser = data ilang).
+2. `_flush()` **berhenti sekaligus** di error pertama → satu job gagal menghalangi semua job di queue.
+3. Queue tidak ada dedup → retry kirim duplikat.
+4. Backend `insertRow` tidak cek id eksis → bisa duplikat bila retry.
+5. Tidak ada notifikasi bila data gagal permanen.
+
+Perbaikan:
+- ✅ **`state.lastTrx` persist ke localStorage** (`cafeku_pending_trx`) + `restorePendingTrx()` di `init()` & tiap interval sync → kirim ulang otomatis bila belum ada di sheet.
+- ✅ **`_flush()` retry eksponensial** (backoff 2^n · 5s) + **max 5 attempts** lalu buang & dispatch event `store:failed`.
+- ✅ **Dedup queue** — `_push` hapus entry action+id yang sama sebelum push.
+- ✅ **Notifikasi gagal**: listener `store:failed` → toast “ada data gagal terkirim, cek koneksi & sync manual”.
+- ✅ **Backend `insertRow` = upsert** — sudah ada id → update, hindari duplikat. `code.gs`
+- ✅ **Flush eksplisit** di `checkout()` → kirim ke sheet segera, bukan tunggu 8s. `app.js`
+
+⚠️ **Deploy:** code.gs berubah (upsert) → buat **deployment baru** di Apps Script.
+
 ### 2026-08-30 — FASE 4: Mode Gelap + PWA Installable
 - [FEAT] **Mode Gelap**: toggle slide di Pengaturan → persist localStorage → `[data-theme="dark"]` + override CSS variabel. `--bar` baru untuk topbar/bottomnav (tetap gelap di dark mode). `css/style.css`, `js/app.js`
 - [FEAT] **PWA installable**: `manifest.webmanifest` + `<link rel="manifest">` + meta `apple-mobile-web-app-capable`. Ikon SVG inline. `index.html`

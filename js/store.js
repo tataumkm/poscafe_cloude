@@ -119,13 +119,18 @@ export const Store = {
 
   _push(action, sheet, data) {
     const q = this._getQueue();
-    q.push({ action, sheet, data, id: data.id, ts: Date.now() });
+    // dedup: hapus entry dengan action+id yang sama agar tidak double kirim
+    if (action === 'insert' || action === 'update' || action === 'delete') {
+      const idx = q.findIndex(j => j.action === action && j.sheet === sheet && j.id === data.id);
+      if (idx > -1) q.splice(idx, 1);
+    }
+    q.push({ action, sheet, data, id: data.id, ts: Date.now(), attempts: 0 });
     this._setQueue(q);
     this._flush();
   },
   _pushBatch(action, sheet, items) {
     const q = this._getQueue();
-    q.push({ action, sheet, items, ts: Date.now() });
+    q.push({ action, sheet, items, ts: Date.now(), attempts: 0 });
     this._setQueue(q);
     this._flush();
   },
@@ -133,6 +138,7 @@ export const Store = {
   async _flush() {
     if (this._flushing) return;
     this._flushing = true;
+    const MAX_ATTEMPTS = 5;
     let q = this._getQueue();
     while (q.length) {
       const job = q[0];
@@ -144,15 +150,28 @@ export const Store = {
         q.shift();
         this._setQueue(q);
       } catch (err) {
-        // gagal (mis. offline) -> berhenti dulu, coba lagi nanti
-        break;
+        job.attempts = (job.attempts || 0) + 1;
+          if (job.attempts >= MAX_ATTEMPTS) {
+          q.shift();
+          try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) {}
+          console.error('Queue job gagal permanen setelah', MAX_ATTEMPTS, 'x:', job);
+          try { window.dispatchEvent(new CustomEvent('store:failed', { detail: { sheet: job.sheet, id: job.id || job.items } })); } catch (e) {}
+        } else {
+          // backoff eksponensial: 10s, 20s, 40s...
+          job.nextRetry = Date.now() + Math.pow(2, job.attempts) * 5000;
+          this._setQueue(q);
+          break; // coba lagi nanti
+        }
       }
     }
     this._flushing = false;
   },
 
   pendingCount() {
-    return this._getQueue().length;
+    return this._getQueue().filter(j => !j.failed).length;
+  },
+  pendingFailedCount() {
+    return this._getQueue().filter(j => j.failed).length;
   }
 };
 
