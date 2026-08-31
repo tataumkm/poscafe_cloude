@@ -22,6 +22,16 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — Cetak Langsung Printer Bluetooth (ESC/POS) + Fallback
+- [FEAT] Modul baru `js/ble.js`: **Web Bluetooth + ESC/POS**. Connect printer BT thermal, kirim byte langsung (tanpa dialog preview), test print, persist device.
+- [FEAT] Orkestrasi cetak 3 jalur (`printReceipt`): **A)** printer BLE langsung (bila toggle aktif & terkoneksi) → **B)** Web Share (share struk teks ke app printer) → **C)** `window.print()` dialog. `js/app.js`
+- [FEAT] Settings (Lainnya → Printer Bluetooth): status koneksi, toggle **"Cetak Langsung (tanpa preview)"**, tombol **Konek Printer** & **Test Print**. Pref disimpan di localStorage (`cafeku_print_pref`).
+- [IMPROVE] CSS toggle switch. `css/style.css`
+- ⚠️ Batasan: Web Bluetooth **hanya Android + Chrome/Edge**; banyak printer GP-5890BT pakai BT Classic (SPP) → tidak connect via BLE → otomatis fallback ke share/dialog.
+
+### 2026-08-30 — Auto-fill Nama Kemasan & Isi Per Kemasan
+- [FIX] Saat pilih bahan existing di form Belanja Bahan, kolom **Nama Kemasan** & **Isi per Kemasan** kini terisi otomatis. Sumber: `kemasanDefault` pada record bahan (data kemasan terakhir belanja), dengan **fallback ke riwayat `BelanjaBahan` terakhir untuk bahan itu** — sehingga bahan lama yang belum punya `kemasanDefault` tetap terisi. Helper `defaultKemasanUntuk()`. `js/app.js`
+
 ### 2026-08-30 — Cetak Ulang Struk dari Riwayat
 - [FEAT] Tombol **"Cetak Ulang Struk"** di tiap kartu Detail Transaksi (Laporan → Penjualan Harian). `printReceipt()` ulang tanpa perlu input uang lagi (dibayar = total). `js/app.js`
 

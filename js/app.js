@@ -1,6 +1,7 @@
 import { Api } from './api.js';
 import { Store } from './store.js';
 import { rupiah, numOnly, todayStr, nowTimeStr, formatTanggal, hitungHpp, hitungHargaSaran, hitungAvco, uid, toast } from './utils.js';
+import { isBleSupported, isPrinterConnected, getPrinterName, connectPrinter, disconnectPrinter, printBytes, testPrint, buildEscPos } from './ble.js';
 
 // ============ STATE GLOBAL ============
 const state = {
@@ -35,6 +36,11 @@ function getSettings() {
   const s = Store.get('Settings')[0];
   return s || { defaultMarginPercent: 40, platforms: [{ nama: 'Offline', adminPercent: 0 }] };
 }
+function getPrintPref() {
+  try { return JSON.parse(localStorage.getItem('cafeku_print_pref') || '{}'); }
+  catch (e) { return {}; }
+}
+function setPrintPref(p) { localStorage.setItem('cafeku_print_pref', JSON.stringify(p)); }
 function getBahanList() { return Store.get('Bahan'); }
 function getMenuList() { return Store.get('Menu'); }
 
@@ -327,6 +333,41 @@ function closePayment() {
 }
 
 function printReceipt(trx, bayar) {
+  const pref = getPrintPref();
+  const text = strukText(trx, bayar);
+
+  // JALUR A: Cetak langsung via printer Bluetooth (tanpa dialog) bila aktif & terkoneksi
+  if (pref.mode === 'ble' && isBleSupported() && isPrinterConnected()) {
+    printReceiptBLE(trx, bayar).then(ok => {
+      if (!ok) fallbackPrint(trx, bayar, text);
+    });
+    return;
+  }
+  fallbackPrint(trx, bayar, text);
+}
+
+async function printReceiptBLE(trx, bayar) {
+  try {
+    await printBytes(buildEscPos(trx, bayar));
+    toast('Struk terkirim ke printer ✓');
+    return true;
+  } catch (err) {
+    toast('Printer gagal: ' + err.message);
+    return false;
+  }
+}
+
+// JALUR B: Web Share (share ke app printer) -> JALUR C: window.print()
+function fallbackPrint(trx, bayar, text) {
+  if (typeof navigator.share === 'function') {
+    navigator.share({ title: 'Struk ' + (trx.namaToko || 'Cafeku'), text })
+      .catch(() => { printDialog(text); });
+  } else {
+    printDialog(text);
+  }
+}
+
+function printDialog(trx, bayar, text) {
   const setting = getSettings();
   const shopName = (setting.namaToko || 'Cafeku').replace(/</g, '&lt;');
   const kembalian = Number(bayar || 0) - Number(trx.total || 0);
@@ -357,6 +398,30 @@ function printReceipt(trx, bayar) {
   if (!p) { p = document.createElement('div'); p.id = 'print-receipt'; document.body.appendChild(p); }
   p.innerHTML = html;
   window.print();
+}
+
+// Struk sebagai teks untuk jalur share (Opsi B)
+function strukText(trx, bayar) {
+  const rup = n => 'Rp' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
+  const shop = (trx.namaToko || 'CAFEKU').toUpperCase();
+  const W = 32;
+  const ln = '='.repeat(W);
+  const lines = [];
+  lines.push(shop, 'STRUK KASIR', trx.platform || 'OFFLINE', ln);
+  (trx.items || []).forEach(it => {
+    lines.push((it.nama || '').toUpperCase());
+    const left = '  ' + it.qty + ' x ' + rup(it.hargaJual);
+    lines.push(left.padEnd(Math.max(0, W - String(rup(it.hargaJual * it.qty)).length)) + rup(it.hargaJual * it.qty));
+  });
+  lines.push(ln);
+  lines.push('Subtotal'.padEnd(W - String(rup(trx.subtotal)).length) + rup(trx.subtotal));
+  if (Number(trx.adjustment)) lines.push('Penyesuaian'.padEnd(W - String(rup(trx.adjustment)).length) + rup(trx.adjustment));
+  lines.push('TOTAL'.padEnd(W - String(rup(trx.total)).length) + rup(trx.total));
+  lines.push('Dibayar'.padEnd(W - String(rup(bayar)).length) + rup(bayar));
+  const kemb = Number(bayar) - Number(trx.total);
+  lines.push((kemb >= 0 ? 'Kembalian' : 'KURANG').padEnd(W - String(rup(Math.abs(kemb))).length) + rup(Math.abs(kemb)));
+  lines.push(ln, 'TERIMA KASIH', 'Sampai jumpa!');
+  return lines.join('\n');
 }
 
 // =========================================================
@@ -762,6 +827,21 @@ function renderLainnyaPage() {
       <button class="btn btn-ghost" id="btn-manual-sync">🔄 Sinkron Ulang Sekarang</button>
       <div class="hint" style="text-align:center;margin-top:6px">Data disimpan otomatis. Sinkron manual berguna kalau kamu buka di HP lain.</div>
     </div>
+
+    <div class="section-title" style="margin-top:10px">Printer Bluetooth</div>
+    <div class="card">
+      <div class="row">
+        <span class="k">Status</span>
+        <span class="v" id="printer-status">${isBleSupported() ? (isPrinterConnected() ? 'Terkoneksi: ' + getPrinterName() : 'Belum terkoneksi') : 'Web Bluetooth tidak didukung (butuh Android + Chrome)'}</span>
+      </div>
+      <label style="margin-top:8px">Cetak Langsung (tanpa preview)</label>
+      <label class="switch-row"><input type="checkbox" id="printer-auto" ${getPrintPref().mode === 'ble' ? 'checked' : ''} /><span>Gunakan printer Bluetooth otomatis saat bayar</span></label>
+      <div class="hint">Aktif: setelah tap Bayar, struk langsung terkirim ke printer — tanpa jendela preview. Cetak ulang via share/dialog tetap tersedia sebagai cadangan.</div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn btn-ghost" id="btn-printer-connect">${isPrinterConnected() ? 'Putus Koneksi' : 'Konek Printer'}</button>
+        <button class="btn btn-primary" id="btn-printer-test">Test Print</button>
+      </div>
+    </div>
   `;
 }
 
@@ -892,6 +972,26 @@ document.addEventListener('click', async (e) => {
   }
   if (t.dataset.saveSettings !== undefined) return saveSettingsForm();
   if (t.id === 'btn-manual-sync') { toast('Menyinkronkan...'); await Store.syncAll(); render(); toast('Sinkron selesai ✓'); return; }
+
+  if (t.id === 'btn-printer-connect') {
+    if (isPrinterConnected()) {
+      await disconnectPrinter(); render(); toast('Printer diputus koneksinya'); return;
+    }
+    try {
+      toast('Pilih printer Bluetooth di popup...');
+      const nama = await connectPrinter();
+      render(); toast('Terkoneksi: ' + nama);
+    } catch (err) {
+      toast('Gagal konek: ' + err.message);
+    }
+    return;
+  }
+  if (t.id === 'btn-printer-test') {
+    if (!isPrinterConnected()) { toast('Konek printer dulu'); return; }
+    try { await testPrint(); toast('Test print terkirim ✓'); }
+    catch (err) { toast('Gagal: ' + err.message); }
+    return;
+  }
 });
 
 document.addEventListener('input', (e) => {
@@ -937,6 +1037,12 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   const t = e.target;
+  if (t.id === 'printer-auto') {
+    const pref = getPrintPref();
+    pref.mode = t.checked ? 'ble' : 'manual';
+    setPrintPref(pref);
+    return;
+  }
   if (t.dataset.cartPrice !== undefined) {
     // harga satuan diubah manual -> refresh total setelah selesai mengetik
     renderCartRegion();
@@ -951,18 +1057,31 @@ document.addEventListener('change', (e) => {
     const wrap = document.getElementById('bf-new-bahan-wrap');
     if (wrap) wrap.style.display = t.value === '__new__' ? 'block' : 'none';
     if (t.value !== '__new__') {
-      const b = getBahanList().find(x => x.id === t.value);
-      if (b && b.kemasanDefault) {
-        // isi ulang otomatis dari kemasan terakhir yang dipakai untuk bahan ini
+      const def = defaultKemasanUntuk(t.value);
+      if (def) {
         const kn = document.getElementById('bf-kemasan-nama');
         const ik = document.getElementById('bf-isi-kemasan');
-        if (kn) kn.value = b.kemasanDefault.nama || '';
-        if (ik) ik.value = b.kemasanDefault.isi || 1;
+        if (kn && def.nama !== undefined) kn.value = def.nama || '';
+        if (ik && def.isi !== undefined) ik.value = def.isi || 1;
+        updateBelanjaPreview();
       }
     }
     updateBelanjaPreview();
   }
 });
+
+// Ambil default kemasan untuk suatu bahan: prioritas dari record bahan
+// (kemasan terakhir dipakai), fallback ke entri BelanjaBahan terakhir untuk bahan itu.
+function defaultKemasanUntuk(bahanId) {
+  const b = getBahanList().find(x => x.id === bahanId);
+  if (b && b.kemasanDefault && (b.kemasanDefault.nama !== undefined || b.kemasanDefault.isi !== undefined)) {
+    return b.kemasanDefault;
+  }
+  const riwayat = Store.get('BelanjaBahan').filter(r => r.bahanId === bahanId);
+  if (!riwayat.length) return null;
+  const last = riwayat[riwayat.length - 1];
+  return { nama: last.kemasanNama, isi: last.isiPerKemasan };
+}
 
 function syncMenuDraftFromDom() {
   const d = state.menuFormDraft;

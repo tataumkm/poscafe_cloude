@@ -384,3 +384,10 @@ input:focus, select:focus, textarea:focus {
 .pay-actions { display: flex; gap: 8px; margin-top: 8px; }
 .pay-actions .btn { flex: 1; }
 
+/* ---------- Toggle switch ---------- */
+.switch-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.switch-row input[type="checkbox"] {
+  width: auto; height: auto; accent-color: var(--accent);
+  width: 20px; height: 20px; margin: 0; cursor: pointer;
+}
+
