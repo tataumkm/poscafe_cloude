@@ -22,6 +22,13 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — UX Refinement: Layout Keranjang + Kontras Dark Mode
+- [UX] Redesign **keranjang ke grid 2-col** (`.cart-item`/`.ci-*`) — flat, 1 baris tiap item: kiri (nama+qty+sub), kanan (harga+delete). Hapus label "harga satuan" yang membebani.
+- [UX] Tombol qty (`+`/`-`) + border `var(--accent)` agar nyolong di gelap; `.q-ctrl:active` invert warni.
+- [UX] Tombol delete `.ci-delete` memakai icon `✕` (konsisten tema).
+- [FIX] **Kontras dark mode**: `.pay-display` & `.pay-key` pakai color eksplisit `var(--ink)` (sebelmnya inherit/terlihat "hitam" pada overlay gelap).
+- [FIX] `.coret` global (coret diskon) & harga di keranjang pakai variabel dark-mode-konsisten.
+
 ### 2026-08-30 — FASE UX: Kasir Lebih Halus + Transaksi di Modal Bayar
 - [UX] **Transaksi disimpan di modal bayar, bukan saat checkout**: checkout = staging (turunkan stok + simpan draft). Klik **Bayar** di modal baru insert ke sheet. **Batal/✕** = rollback stok + kembali ke keranjang (bisa tambah menu). Proteksi double-checkout (`checkingOut`). `js/app.js`
 - [UX] **Tombol hapus keranjang** diperbesar & proporsional (`.btn-del-item`), stepper `.q-ctrl` rapi. Harga coret diskon per-item. `css/style.css`

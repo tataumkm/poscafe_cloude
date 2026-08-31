@@ -246,8 +246,7 @@ function renderTopbar() {
   const pending = Store.pendingCount();
   return `
     <div class="topbar">
-      <h1><span class="dot"></span>Cafeku ${pending ? `<span style="margin-left:auto;font-size:10px;opacity:.7;font-weight:500">⏳ ${pending} belum tersinkron</span>` : ''}</h1>
-      <div class="stats">
+      <h1><span class="dot"></span>Cafeku ${pending ? `<span style="margin-left:auto;font-size:10px;opacity:.7;font-weight:500">() menunggu sinkronisasi</span>` : ''}</h1>      <div class="stats">
         <div class="stat"><div class="label">Estimasi Kas</div><div class="value">${rupiah(kas)}</div></div>
         <div class="stat"><div class="label">Omzet Hari Ini</div><div class="value">${rupiah(omzetHariIni())}</div></div>
       </div>
@@ -259,18 +258,36 @@ function omzetHariIni() {
   return Store.get('Penjualan').filter(p => p.tanggal === todayStr()).reduce((s, p) => s + Number(p.total || 0), 0);
 }
 
+const ICON = {
+  receipt: 'M3 4.5h18v2H3zm0 3.75h12v2H3zm0 3.75h18v2H3zm-3 3.75h24v8.5H0zm24-2.25v-.25H0v.25',
+  coffee: 'M12 2a4 4 0 0 1 3.95 3.22A3 3 0 0 1 18 10v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V10a3 3 0 0 1 3-3 4 4 0 0 1 7.95-4.78z',
+  package: 'M3 5.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0V5.5m15.5 0a2.5 2.5 0 0 1 1 4.9v10.1a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10.4a2.5 2.5 0 0 1 1.53-2.3l7-2.8',
+  chart: 'M3 3v18h18v-2H5V5h16V3zM8 14v4h2v-4zm4-6v10h2V8zm4 4v6h2v-6z',
+  more: 'M12 12.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5m-7.5 0a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 0 0 5m15 0a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 0 0 5z',
+  plus: 'M12 5v14m7-7H5',
+  search: 'M10.5 3a7.5 7.5 0 1 0 4.9 1.9l4.1 4.1a1 1 0 0 0 .7-.7 1 1 0 0 0-.7-.7l-4.1-4.1A7.5 7.5 0 0 0 10.5 3zm0 2a5.5 5.5 0 1 1 0 11 0-11 5.5 5.5 0 0 1 0 11z',
+  edit: 'M11 4.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zm1.6 2.3a1 1 0 0 1 1.4 0l6.2 6.2a1 1 0 0 1 .29.5v3.8a1 1 0 0 1-1 .9h-3.8a1 1 0 0 1-.5-.29l-6.2-6.2a1 1 0 0 1-.29-.5v-3.6a1 1 0 0 1 .71-.9h1.2z',
+  trash: 'M6 2h12a1 1 0 0 1 1 1v1H5V3a1 1 0 0 1 1-1zm2 4V4h8v2h2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6h10V6H8V4z',
+  file: 'M4 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h3v8h6V4z',
+  printer: 'M6 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
+  sync: 'M3 12a9 9 0 0 1 9-9 9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-9-9Zm15.9-1.4A7 7 0 0 0 5.1 5.1a9 9 0 0 0 0 13.8 0 7 7 0 0 0 13.8 0v-2'
+};
+function svg(name, cls = 'ic') {
+  return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICON[name]}"></path></svg>`;
+}
+
 function renderBottomNav() {
   const items = [
-    ['kasir', '🧾', 'Kasir'],
-    ['menu', '☕', 'Menu'],
-    ['stok', '📦', 'Stok'],
-    ['laporan', '📊', 'Laporan'],
-    ['lainnya', '⋯', 'Lainnya']
+    ['kasir', 'receipt', 'Kasir'],
+    ['menu', 'coffee', 'Menu'],
+    ['stok', 'package', 'Stok'],
+    ['laporan', 'chart', 'Laporan'],
+    ['lainnya', 'more', 'Lainnya']
   ];
   return `<div class="bottomnav">
     ${items.map(([key, ic, label]) => `
       <button data-nav="${key}" class="${state.page === key ? 'active' : ''}">
-        <span class="ic">${ic}</span>${label}
+        <span class="ic">${svg(ic)}</span>${label}
       </button>`).join('')}
   </div>`;
 }
@@ -339,20 +356,20 @@ function renderCartInner() {
     const diskonItem = (c.hargaNormal || c.hargaJual) - c.hargaJual;
     const adaDiskonItem = diskonItem > 0;
     return `
-      <div class="item-line" style="gap:0">
-        <div style="flex:2;min-width:90px">
-          <div class="name">${escapeHtml(c.nama)}</div>
-          ${adaDiskonItem ? `<span class="coret small">${rupiah(Math.round(c.hargaNormal))}</span>` : ''}
-          <div class="amt">${rupiah(Math.round(c.hargaJual))}</div>
-        </div>
-        <div style="flex:1.6;text-align:right">
-          <div class="qty-stepper" style="justify-content:right">
+      <div class="cart-item">
+        <div class="ci-left">
+          <div class="ci-name">${escapeHtml(c.nama)}</div>
+          <div class="ci-qty">
             <button data-cart-dec="${i}" class="q-ctrl">−</button>
-            <div class="qn">${c.qty}</div>
+            <span class="qn">${c.qty}</span>
             <button data-cart-inc="${i}" class="q-ctrl">+</button>
-            <label style="margin-left:4px;font-size:10px">${rupiah(c.hargaJual * c.qty)}</label>
+            <span class="ci-sub">${c.qty}× ${rupiah(Math.round(c.hargaJual))}</span>
           </div>
-          <button data-cart-remove="${i}" class="btn-del-item" style="margin-top:4px">🗑</button>
+        </div>
+        <div class="ci-right">
+          ${adaDiskonItem ? `<span class="ci-coret">${rupiah(Math.round(c.hargaNormal))}</span>` : ''}
+          <span class="ci-price">${rupiah(Math.round(c.hargaJual))}</span>
+          <button data-cart-remove="${i}" class="ci-delete" title="Hapus">✕</button>
         </div>
       </div>`;
   }).join('')}
@@ -938,7 +955,7 @@ function renderLaporanHarian() {
   return `
     <label style="margin-top:12px">Pilih Tanggal</label>
     <input type="date" id="lap-tanggal" value="${state.laporanTanggal}" />
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-open-riwayat>📋 Semua Riwayat Transaksi</button>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-open-riwayat> Semua Riwayat Transaksi</button>
     <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-export-csv>⬇️ Export CSV (tanggal ini)</button>
 
     <div class="card" style="margin-top:12px">
@@ -960,7 +977,7 @@ function renderLaporanHarian() {
       <div class="card">
         <div class="row"><span class="k">${t.waktu} · ${t.platform}</span><span class="v">${rupiah(t.total)}</span></div>
         ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">🖨 Cetak Ulang Struk</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}"> Cetak Ulang Struk</button>
       </div>
     `).join('')}
   `;
@@ -976,7 +993,7 @@ function openRiwayat() {
       <div class="card">
         <div class="row"><span class="k">${formatTanggal(t.tanggal)} ${t.waktu} · ${escapeHtml(t.platform || 'Offline')}</span><span class="v">${rupiah(t.total)}</span></div>
         ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">🖨 Cetak Ulang Struk</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}"> Cetak Ulang Struk</button>
       </div>`).join('');
   openSheet(`
     <div class="sheet-handle"></div>
@@ -1135,7 +1152,7 @@ function renderLainnyaPage() {
     </div>
 
     <div class="card" style="margin-top:10px">
-      <button class="btn btn-ghost" id="btn-manual-sync">🔄 Sinkron Ulang Sekarang</button>
+      <button class="btn btn-ghost" id="btn-manual-sync"> Sinkron Ulang Sekarang</button>
       <div class="hint" style="text-align:center;margin-top:6px">Data disimpan otomatis. Sinkron manual berguna kalau kamu buka di HP lain.</div>
     </div>
 
