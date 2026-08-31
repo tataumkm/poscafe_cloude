@@ -345,7 +345,7 @@ function renderKasir() {
 
     <div class="section-title">Pilih Menu</div>
     ${filtered.length === 0 ? `<div class="empty">☕<div class="big-icon"></div>Belum ada menu. Tambah dulu di tab Menu.</div>` : `
-    <div class="card" style="padding:6px 14px">
+    <div class="card menu-grid" style="padding:6px 14px">
       ${filtered.map(m => {
         const hpp = hitungHpp(m, getBahanList());
         const saran = m.hargaJualManual || hitungHargaSaran(hpp, m.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform));
@@ -422,6 +422,36 @@ function renderCartRegion() {
   if (container) container.innerHTML = renderCartInner();
   const title = document.getElementById('cart-title');
   if (title) title.textContent = `Keranjang${state.cart.length ? ` (${state.cart.length})` : ''}`;
+}
+
+function renderMenuList() {
+  const menus = getMenuList().filter(m => m.aktif !== false);
+  const filtered0 = state.menuKategoriFilter === 'Semua' ? menus : menus.filter(m => m.kategori === state.menuKategoriFilter);
+  const filtered = state.cartSearch ? filtered0.filter(m => (m.nama + ' ' + (m.kategori || '')).toLowerCase().includes(state.cartSearch.toLowerCase())) : filtered0;
+  const settings = getSettings();
+
+  const menuGrid = document.querySelector('.menu-grid');
+  if (!menuGrid) return;
+
+  if (filtered.length === 0) {
+    menuGrid.innerHTML = `<div class="empty">☕<div class="big-icon"></div>Belum ada menu. Tambah dulu di tab Menu.</div>`;
+    return;
+  }
+
+  menuGrid.innerHTML = filtered.map(m => {
+    const hpp = hitungHpp(m, getBahanList());
+    const saran = m.hargaJualManual || hitungHargaSaran(hpp, m.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform));
+    const efektif = hargaJualEfektif(m, saran);
+    const adaDiskon = efektif < saran;
+    return `
+    <div class="item-line" data-pick-menu="${m.id}" style="cursor:pointer">
+      <div>
+        <div class="name">${escapeHtml(m.nama)}${adaDiskon ? ' <span class="badge low">PROMO</span>' : ''}</div>
+        <div class="sub">${m.kategori || ''} · HPP ${rupiah(hpp)}</div>
+      </div>
+      <div class="amt">${adaDiskon ? `<span class="coret">${rupiah(Math.round(saran))}</span> <b>${rupiah(Math.round(efektif))}</b>` : rupiah(Math.round(efektif))}</div>
+    </div>`;
+  }).join('');
 }
 
 function adminPercentFor(platformName) {
@@ -1457,7 +1487,7 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
-  if (t.id === 'cart-search') { state.cartSearch = t.value; render(); return; }
+  if (t.id === 'cart-search') { state.cartSearch = t.value; renderMenuList(); return; }
   if (t.id === 'input-adjustment') {
     state.adjustment = numOnly(t.value);
     // update total & laba live tanpa re-render (biar fokus tidak hilang)

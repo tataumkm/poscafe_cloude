@@ -457,7 +457,7 @@ button:disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-even
   border-bottom: 1px solid var(--line);
 }
 .cart-item:last-child { border-bottom: none; }
-.cart-item .ci-left { display: flex; flex-direction: column; gap: 2px; }
+.cart-item .ci-left { display: flex; flex-direction: column; gap: 4px; }
 .cart-item .ci-name { font-weight: 600; font-size: 14px; }
 .cart-item .ci-qty {
   display: inline-flex; align-items: center; gap: 6px;
@@ -469,7 +469,7 @@ button:disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-even
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 4px;
 }
 .cart-item .ci-price { font-family: var(--font-mono); font-weight: 700; font-size: 13px; }
 .cart-item .ci-coret {
