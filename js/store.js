@@ -44,7 +44,19 @@ export const Store = {
     try {
       const all = await Api.initAll();
       Object.keys(all).forEach(sheet => {
-        this.data[sheet] = all[sheet];
+        // gabungkan item lokal yang masih dalam antrian (belum terkirim ke server)
+        // agar tidak hilang dari cache saat disinkronkan.
+        const serverData = all[sheet] || [];
+        const queuedIds = this._queuedIdsForSheet(sheet);
+        let merged = serverData;
+        if (queuedIds.size) {
+          const local = this.data[sheet] || [];
+          const queued = local.filter(r => queuedIds.has(r.id));
+          if (queued.length) {
+            merged = serverData.filter(r => !queuedIds.has(r.id)).concat(queued);
+          }
+        }
+        this.data[sheet] = merged;
         this.saveLocal(sheet);
       });
       localStorage.setItem('cafeku_last_sync', String(Date.now()));
@@ -54,6 +66,22 @@ export const Store = {
     } finally {
       this.syncing = false;
     }
+  },
+
+  // kumpulkan id yang masih menunggu dikirim (di antrian) untuk sebuah sheet
+  _queuedIdsForSheet(sheet) {
+    const q = this._getQueue();
+    const ids = new Set();
+    q.forEach(j => {
+      if (j.sheet !== sheet) return;
+      if (j.action === 'insert' || j.action === 'update') {
+        if (j.id) ids.add(j.id);
+        else if (j.items) j.items.forEach(i => i.id && ids.add(i.id));
+      } else if (j.action === 'batchUpdate' && j.items) {
+        j.items.forEach(i => i.id && ids.add(i.id));
+      }
+    });
+    return ids;
   },
 
   // ---- optimistic writes: update UI dulu, baru kirim ke server di belakang layar ----
