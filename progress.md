@@ -22,6 +22,13 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — Redesign Halaman Laporan (Lebih Mudah Dibaca)
+- [UX] **Penjualan Harian**: hero summary (omzet besar + transaksi/rata-rata/laba) + rincian breakdown (Subtotal → Diskon → Penyesuaian → Total → Laba).
+- [UX] **Menu Terlaris** bar-chart (bar progress + qty + omzet per menu, top 8).
+- [UX] **Grafik Pendapatan 7 Hari** `.c7` bar chart + label otomatis (K/M).
+- [UX] **Detail transaksi expandable** (`data-trx-toggle`) — default kolaps, klik buka item+diskon+print. Tampil no invoice.
+- [UX] **Akuntansi**: hero "Estimasi Kas" (modal/penjualan/belanja+aset mini) + breakdown lengkap.
+
 ### 2026-08-30 — UX Refinement: Layout Keranjang + Kontras Dark Mode
 - [UX] Redesign **keranjang ke grid 2-col** (`.cart-item`/`.ci-*`) — flat, 1 baris tiap item: kiri (nama+qty+sub), kanan (harga+delete). Hapus label "harga satuan" yang membebani.
 - [UX] Tombol qty (`+`/`-`) + border `var(--accent)` agar nyolong di gelap; `.q-ctrl:active` invert warni.

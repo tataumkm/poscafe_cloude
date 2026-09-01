@@ -996,43 +996,111 @@ function renderLaporanHarian() {
   const trx = Store.get('Penjualan').filter(p => p.tanggal === state.laporanTanggal);
   const totalOmzet = trx.reduce((s, t) => s + Number(t.total || 0), 0);
   const totalHpp = trx.reduce((s, t) => s + Number(t.totalHpp || 0), 0);
+  const totalDiskon = trx.reduce((s, t) => s + Number(t.diskon || 0), 0);
+  const totalAdj = trx.reduce((s, t) => s + Number(t.adjustment || 0), 0);
+  const subtotal = trx.reduce((s, t) => s + Number(t.subtotal || 0), 0);
   const laba = totalOmzet - totalHpp;
+  const rata2 = trx.length ? Math.round(totalOmzet / trx.length) : 0;
 
+  // Menu terlaris: qty + omzet
   const perMenu = {};
   trx.forEach(t => (t.items || []).forEach(it => {
-    perMenu[it.nama] = (perMenu[it.nama] || 0) + it.qty;
+    if (!perMenu[it.nama]) perMenu[it.nama] = { qty: 0, omzet: 0 };
+    perMenu[it.nama].qty += it.qty;
+    perMenu[it.nama].omzet += it.hargaJual * it.qty;
   }));
-  const topMenu = Object.entries(perMenu).sort((a, b) => b[1] - a[1]);
+  const topMenu = Object.entries(perMenu).sort((a, b) => b[1].qty - a[1].qty);
+  const maxQty = topMenu.length ? topMenu[0][1].qty : 1;
+
+  const chartHtml = renderChart7Hari();
 
   return `
     <label style="margin-top:12px">Pilih Tanggal</label>
     <input type="date" id="lap-tanggal" value="${state.laporanTanggal}" />
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-open-riwayat>${fa("file")} Semua Riwayat Transaksi</button>
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-export-csv>⬇️ Export CSV (tanggal ini)</button>
 
-    <div class="card" style="margin-top:12px">
-      <div class="row"><span class="k">Jumlah Transaksi</span><span class="v">${trx.length}</span></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost btn-sm" style="flex:1" data-open-riwayat>${fa("file")} Riwayat</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" data-export-csv>⬇️ Export CSV</button>
+    </div>
+
+    ${chartHtml && trx.length ? chartHtml : ''}
+
+    <div class="rep-hero card">
+      <div class="rep-hero-label">OMZET ${formatTanggal(state.laporanTanggal)}</div>
+      <div class="rep-hero-value">${rupiah(totalOmzet)}</div>
+      <div class="rep-mini">
+        <div><span class="k">Transaksi</span><b>${trx.length}</b></div>
+        <div><span class="k">Rata-rata</span><b>${rupiah(rata2)}</b></div>
+        <div><span class="k">Laba Kotor</span><b class="${laba >= 0 ? 'positive' : 'negative'}">${rupiah(laba)}</b></div>
+      </div>
+    </div>
+
+    <div class="section-title">Rincian</div>
+    <div class="card">
+      <div class="row"><span class="k">Subtotal</span><span class="v">${rupiah(subtotal)}</span></div>
+      ${totalDiskon ? `<div class="row"><span class="k">Diskon Promo</span><span class="v negative">−${rupiah(totalDiskon)}</span></div>` : ''}
+      ${totalAdj ? `<div class="row"><span class="k">Penyesuaian</span><span class="v ${totalAdj >= 0 ? 'positive' : 'negative'}">${totalAdj >= 0 ? '+' + rupiah(totalAdj) : rupiah(totalAdj)}</span></div>` : ''}
+      <hr class="receipt-divider" />
       <div class="row"><span class="k">Total Omzet</span><span class="v big">${rupiah(totalOmzet)}</span></div>
-      <div class="row"><span class="k">Total HPP Terjual</span><span class="v">${rupiah(totalHpp)}</span></div>
+      <div class="row"><span class="k">Beban HPP Terjual</span><span class="v">${rupiah(totalHpp)}</span></div>
       <hr class="receipt-divider" />
       <div class="row"><span class="k">Laba Kotor</span><span class="v big ${laba >= 0 ? 'positive' : 'negative'}">${rupiah(laba)}</span></div>
+      <div class="hint">Laba = Total Omzet − HPP Terjual. Diskon & penyesuaian sudah masuk ke total.</div>
     </div>
 
     ${topMenu.length ? `
     <div class="section-title">Menu Terlaris</div>
     <div class="card">
-      ${topMenu.map(([nama, qty]) => `<div class="row"><span class="k">${escapeHtml(nama)}</span><span class="v">${qty} terjual</span></div>`).join('')}
+      ${topMenu.slice(0, 8).map(([nama, d]) => `
+        <div class="rep-bar-row">
+          <div class="rep-bar-top">
+            <span class="rep-bar-name">${escapeHtml(nama)}</span>
+            <span class="rep-bar-val">${d.qty}× · ${rupiah(d.omzet)}</span>
+          </div>
+          <div class="rep-bar-track"><div class="rep-bar-fill" style="width:${Math.round(d.qty / maxQty * 100)}%"></div></div>
+        </div>`).join('')}
     </div>` : ''}
 
-    <div class="section-title">Detail Transaksi</div>
+    <div class="section-title">Detail Transaksi (${trx.length})</div>
     ${trx.length === 0 ? `<div class="empty">Belum ada penjualan di tanggal ini.</div>` : trx.slice().reverse().map(t => `
-      <div class="card">
-        <div class="row"><span class="k">${t.waktu} · ${t.platform}</span><span class="v">${rupiah(t.total)}</span></div>
-        ${(t.items || []).map(it => `<div class="row"><span class="k" style="font-size:12px">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">${fa("print")} Cetak Ulang Struk</button>
+      <div class="card rep-trx" data-trx="${t.id}">
+        <div class="row rep-trx-head" style="cursor:pointer" data-trx-toggle="${t.id}">
+          <span class="k">${t.waktu} · ${t.platform}${t.noInvoice ? '<br><small style="opacity:.6">' + escapeHtml(t.noInvoice) + '</small>' : ''}</span>
+          <span class="v" style="margin-left:auto">${rupiah(t.total)}<span class="rep-caret" style="margin-left:8px">▸</span></span>
+        </div>
+        <div class="rep-trx-body" id="trx-body-${t.id}" style="display:none">
+          ${(t.items || []).map(it => `<div class="row" style="font-size:12px"><span class="k">${it.qty}× ${escapeHtml(it.nama)}</span><span class="v" style="font-size:12px">${rupiah(it.hargaJual * it.qty)}</span></div>`).join('')}
+          ${Number(t.diskon) ? `<div class="row" style="font-size:12px"><span class="k">Diskon</span><span class="v negative" style="font-size:12px">−${rupiah(t.diskon)}</span></div>` : ''}
+          <button class="btn btn-ghost btn-sm" style="margin-top:8px" data-reprint="${t.id}">${fa("print")} Cetak Ulang Struk</button>
+        </div>
       </div>
     `).join('')}
   `;
+}
+
+function renderChart7Hari() {
+  // 7 hari terakhir (termasuk hari terpilih)
+  const base = new Date(state.laporanTanggal + 'T00:00:00');
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(base);
+    d.setDate(d.getDate() - i);
+    const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const omzet = Store.get('Penjualan').filter(p => p.tanggal === key).reduce((s, t) => s + Number(t.total || 0), 0);
+    days.push({ key, omzet });
+  }
+  const max = Math.max(...days.map(d => d.omzet), 1);
+  const todayKey = todayStr();
+  const bars = days.map(d => `
+    <div class="c7-day">
+      <div class="c7-val" style="font-size:9px">${d.omzet >= 1000000 ? (d.omzet/1000000).toFixed(1)+'M' : d.omzet >= 1000 ? Math.round(d.omzet/1000)+'K' : d.omzet}</div>
+      <div class="c7-track"><div class="c7-fill ${d.key === todayKey ? 'active' : ''}" style="height:${Math.max(3, Math.round(d.omzet / max * 100))}%"></div></div>
+      <div class="c7-label">${d.key === todayKey ? 'Hari ini' : formatTanggal(d.key).split(' ')[1] || ''}</div>
+    </div>`).join('');
+
+  return `
+    <div class="section-title" style="margin-top:14px">Pendapatan 7 Hari</div>
+    <div class="card"><div class="c7">${bars}</div></div>`;
 }
 
 // Semua riwayat transaksi (tidak dibatasi tanggal), urutan terbaru di atas
@@ -1079,7 +1147,17 @@ function renderAkuntansi() {
   const belanjaPeriode = filterByPeriode(belanjaAll, 'tanggal', periode).reduce((s, b) => s + Number(b.total || 0), 0);
 
   return `
-    <div class="section-title">Posisi Modal &amp; Aset (Akumulasi)</div>
+    <div class="rep-hero card">
+      <div class="rep-hero-label">ESTIMASI KAS SAAT INI</div>
+      <div class="rep-hero-value ${kas < 0 ? 'negative' : ''}">${rupiah(kas)}</div>
+      <div class="rep-mini">
+        <div><span class="k">Modal</span><b>${rupiah(totalModal)}</b></div>
+        <div><span class="k">Penjualan</span><b>${rupiah(totalPenjualanAll)}</b></div>
+        <div><span class="k">Belanja+Aset</span><b>${rupiah(totalBelanjaAll + totalAset)}</b></div>
+      </div>
+    </div>
+
+    <div class="section-title">Posisi Modal &amp; Aset</div>
     <div class="card">
       <div class="row"><span class="k">Total Modal Disetor</span><span class="v">${rupiah(totalModal)}</span></div>
       <div class="row"><span class="k">Total Nilai Aset</span><span class="v">${rupiah(totalAset)}</span></div>
@@ -1385,6 +1463,16 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.payClr !== undefined) { payStr = ''; renderPay(); return; }
   if (t.dataset.payExact !== undefined) { payStr = String(Number((state.lastTrx || {}).total) || 0); renderPay(); return; }
   if (t.dataset.payOk !== undefined) { doPay(); return; }
+  if (t.dataset.trxToggle) {
+    const body = document.getElementById('trx-body-' + t.dataset.trxToggle);
+    const txCard = t.closest('.rep-trx');
+    if (body) {
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      if (txCard) { const c = txCard.querySelector('.rep-caret'); if (c) c.style.transform = open ? '' : 'rotate(90deg)'; }
+    }
+    return;
+  }
   if (t.dataset.reprint) {
     const tr = Store.get('Penjualan').find(x => x.id === t.dataset.reprint);
     if (tr) printReceipt(tr, Number(tr.total) || 0);
