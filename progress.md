@@ -22,6 +22,17 @@ Catatan: Settings tidak di-soft-delete (langsung overwrite via update).
 
 ## Changelog
 
+### 2026-08-30 — FIX KRITIS: Belanja Bahan Hilang dari Sheet (sync) 
+**Gejala:** setelah sync, bulanan bahan tampil 0 sehingga estimasi kas salah; sheet `BelanjaBahan` di database kosong.
+**Akar masalah di `Store`, bukan backend:**
+1. `_flush()` saat satu job gagal → `break`, **memblokir semua job di belakangnya**. Di `saveBelanjaForm`, `insert Bahan`/`update Bahan` dipanggil SEBELUM `insert BelanjaBahan` → jika step bahan gagal, insert belanja bahan tertahan selamanya & akhirnya di-drop setelah 5 attempt → tidak pernah sampai sheet.
+2. `syncAll()` menimpa cache lokal dengan data server buta → item lokal yang masih di queue (belum terkirim) hilang dari tampilan.
+**Perbaikan:**
+- ✅ `_flush()` kini **lanjut ke job berikutnya saat satu job gagal** — tidak ada job yang memblokir yang lain; job gagal di-retry terpisah.
+- ✅ Job di-antri tidak di-drop setelah gagal sementara (retry eksponensial), kecuali benar-benar gagal permanen (5×) lalu dipindah & notif.
+- ✅ `syncAll()` **menggabungkan item yang masih di queue** (belum terkonfirmasi) ke data server — tidak menimpa buta. `_queuedIdsForSheet()`.
+- ⚠️ Data BelanjaBahan yang sudah hilang sebelumnya **tidak bisa dipulih otomatis**; untuk ke depan sudah kebal.
+
 ### 2026-08-30 — Redesign Halaman Laporan (Lebih Mudah Dibaca)
 - [UX] **Penjualan Harian**: hero summary (omzet besar + transaksi/rata-rata/laba) + rincian breakdown (Subtotal → Diskon → Penyesuaian → Total → Laba).
 - [UX] **Menu Terlaris** bar-chart (bar progress + qty + omzet per menu, top 8).

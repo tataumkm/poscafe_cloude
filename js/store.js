@@ -168,27 +168,28 @@ export const Store = {
     this._flushing = true;
     const MAX_ATTEMPTS = 5;
     let q = this._getQueue();
-    while (q.length) {
-      const job = q[0];
+    let idx = 0;
+    while (idx < q.length) {
+      const job = q[idx];
       try {
         if (job.action === 'insert') await Api.insert(job.sheet, job.data);
         else if (job.action === 'update') await Api.update(job.sheet, job.id, job.data);
         else if (job.action === 'delete') await Api.remove(job.sheet, job.id);
         else if (job.action === 'batchUpdate') await Api.batchUpdate(job.sheet, job.items);
-        q.shift();
+        q.splice(idx, 1);           // sukses → hapus dari antrian, lanjut ke item berikutnya
         this._setQueue(q);
       } catch (err) {
+        // langsung lanjut ke job berikutnya — SATU job gagal TIDAK memblokir yang lain
         job.attempts = (job.attempts || 0) + 1;
-          if (job.attempts >= MAX_ATTEMPTS) {
-          q.shift();
+        if (job.attempts >= MAX_ATTEMPTS) {
+          q.splice(idx, 1);
           try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) {}
           console.error('Queue job gagal permanen setelah', MAX_ATTEMPTS, 'x:', job);
           try { window.dispatchEvent(new CustomEvent('store:failed', { detail: { sheet: job.sheet, id: job.id || job.items } })); } catch (e) {}
         } else {
-          // backoff eksponensial: 10s, 20s, 40s...
           job.nextRetry = Date.now() + Math.pow(2, job.attempts) * 5000;
           this._setQueue(q);
-          break; // coba lagi nanti
+          idx++;                    // coba lagi nanti, tapi jangan berhenti flush
         }
       }
     }
