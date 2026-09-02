@@ -28,7 +28,12 @@ export const Store = {
   },
 
   get(sheet) {
-    return (this.data[sheet] || []).filter(r => !r.deleted);
+    const all = this.data[sheet] || [];
+    const filtered = all.filter(r => !r.deleted);
+    if (sheet === 'BelanjaBahan') {
+      console.log(`[DEBUG Store.get] ${sheet}: raw=${all.length}, filtered=${filtered.length}`);
+    }
+    return filtered;
   },
   getWithDeleted(sheet) {
     return this.data[sheet] || [];
@@ -42,6 +47,7 @@ export const Store = {
     if (this.syncing) return;
     this.syncing = true;
     try {
+      console.log('[DEBUG Store.syncAll] START, BelanjaBahan before =', (this.data['BelanjaBahan'] || []).length, 'items');
       const all = await Api.initAll();
       Object.keys(all).forEach(sheet => {
         // gabungkan item lokal yang masih dalam antrian (belum terkirim ke server)
@@ -57,6 +63,9 @@ export const Store = {
           }
         }
         this.data[sheet] = merged;
+        if (sheet === 'BelanjaBahan') {
+          console.log('[DEBUG Store.syncAll] BelanjaBahan merge: server=' + serverData.length + ', queuedIds=' + [...queuedIds].join(',') + ', merged=' + merged.length);
+        }
         this.saveLocal(sheet);
       });
       localStorage.setItem('cafeku_last_sync', String(Date.now()));
@@ -93,6 +102,7 @@ export const Store = {
     this.data[sheet].push(obj);
     this.saveLocal(sheet);
     this.emit();
+    console.log(`[DEBUG Store.insert] sheet=${sheet}, id=${obj.id}, data.length=${this.data[sheet].length}`);
     this._push('insert', sheet, obj);
     return obj;
   },
@@ -164,8 +174,9 @@ export const Store = {
   },
 
   async _flush() {
-    if (this._flushing) return;
+    if (this._flushing) { console.log('[DEBUG Store._flush] skipped - already flushing'); return; }
     this._flushing = true;
+    console.log('[DEBUG Store._flush] START, queue =', JSON.parse(JSON.stringify(this._getQueue())));
     const MAX_ATTEMPTS = 5;
     while (true) {
       const q = this._getQueue();
@@ -192,6 +203,7 @@ export const Store = {
         }
       }
     }
+    console.log('[DEBUG Store._flush] END, remaining queue =', this._getQueue().length);
     this._flushing = false;
   },
 

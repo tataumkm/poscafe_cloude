@@ -843,6 +843,8 @@ function renderMenuFormSheet() {
 // =========================================================
 function renderStokPage() {
   const bahanList = getBahanList();
+  const belanjaData = Store.get('BelanjaBahan');
+  console.log('[DEBUG renderStokPage] Store.get("BelanjaBahan") =', belanjaData.length, 'items', belanjaData);
   return `
     <div class="row" style="margin-bottom:4px">
       <div class="section-title" style="margin:0">Stok Bahan</div>
@@ -1815,9 +1817,14 @@ async function saveBelanjaForm() {
     avcoSesudah: avcoBaru, supplier
   });
 
+  console.log('[DEBUG saveBelanja] after insert, Store.data.BelanjaBahan =', JSON.parse(JSON.stringify(Store.get('BelanjaBahan'))));
+  console.log('[DEBUG saveBelanja] queue =', JSON.parse(JSON.stringify(Store._getQueue())));
+
   closeSheet();
   toast(`Belanja tersimpan ✓ — AVCO ${bahanNama}: ${rupiah(avcoBaru)}/${satuanDasar}`);
   render();
+
+  console.log('[DEBUG saveBelanja] after render, Store.data.BelanjaBahan =', JSON.parse(JSON.stringify(Store.get('BelanjaBahan'))));
 }
 
 async function saveBahanEdit(id) {
