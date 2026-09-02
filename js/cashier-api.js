@@ -2,9 +2,15 @@
 import { API_URL_CASHIER, API_KEY_CASHIER } from './config.js';
 
 async function getJson(url) {
+  console.log('[DEBUG api] GET:', url);
   const res = await fetch(url);
-  if (!res.ok) throw new Error('Gagal memuat data (' + res.status + ')');
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error('[DEBUG api] GET failed:', res.status, txt);
+    throw new Error('Gagal memuat data (' + res.status + ')');
+  }
   const json = await res.json();
+  console.log('[DEBUG api] GET response:', json);
   if (json.error) throw new Error(json.error);
   return json;
 }
@@ -17,11 +23,11 @@ async function postJson(payload) {
   });
   if (!res.ok) {
     const txt = await res.text();
-    console.error('POST failed:', res.status, txt);
+    console.error('[DEBUG api] POST failed:', res.status, txt);
     throw new Error('Gagal menyimpan data (' + res.status + ')');
   }
-  if (!res.ok) throw new Error('Gagal menyimpan data (' + res.status + ')');
   const json = await res.json();
+  console.log('[DEBUG api] POST response:', json);
   if (json.error) throw new Error(json.error);
   return json.result;
 }
@@ -41,6 +47,7 @@ export const CashierApi = {
     return getJson(API_URL_CASHIER + withKey('action=getUsers'));
   },
   login(nama, pin) {
+    console.log('[DEBUG api] login:', { nama, pin });
     return postJson({ action: 'login', nama, pin });
   },
   insert(sheet, data) {

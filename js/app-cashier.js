@@ -57,9 +57,12 @@ async function init() {
 
 async function loadUsers() {
   try {
+    console.log('[DEBUG loadUsers] calling CashierApi.getUsers...');
     state.users = await CashierApi.getUsers();
+    console.log('[DEBUG loadUsers] users loaded:', state.users);
     render();
   } catch (e) {
+    console.error('[DEBUG loadUsers] error:', e);
     toast('Gagal load data: ' + e.message);
   }
 }
@@ -67,9 +70,12 @@ async function loadUsers() {
 async function handleLogin() {
   const nama = (document.getElementById('cl-nama') || {}).value || '';
   const pin = (document.getElementById('cl-pin') || {}).value || '';
+  console.log('[DEBUG login] nama:', nama, 'pin:', pin);
   if (!nama || !pin) { toast('Pilih nama & isi PIN'); return; }
   try {
+    console.log('[DEBUG login] calling CashierAuth.login...');
     const result = await CashierAuth.login(nama, pin);
+    console.log('[DEBUG login] result:', result);
     state.page = 'main';
     await CashierStore.syncAll(true);
     render();
@@ -77,6 +83,7 @@ async function handleLogin() {
     if (CashierStore.pendingCount() > 0) CashierStore._flush();
     setInterval(() => { CashierStore.syncAll(true).then(() => CashierStore._flush()).then(render); }, AUTO_SYNC_INTERVAL);
   } catch (err) {
+    console.error('[DEBUG login] error:', err);
     toast('Login gagal: ' + err.message);
   }
 }

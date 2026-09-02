@@ -32,7 +32,9 @@ export const CashierAuth = {
   },
   // login: kirim ke backend, dapat success/gagal
   async login(nama, pin) {
+    console.log('[DEBUG auth] login called, calling CashierApi.login...');
     const result = await CashierApi.login(nama, pin);
+    console.log('[DEBUG auth] CashierApi.login result:', result);
     if (!result.success) throw new Error(result.error || 'Login gagal');
     this.setLogin(result.nama, result.role);
     return result;
