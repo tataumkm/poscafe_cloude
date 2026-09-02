@@ -35,6 +35,7 @@ function doGet(e) {
     const action = e.parameter.action;
     if (action === 'initAll') return respond(getAllSheetsData());
     if (action === 'getSheet') return respond(getSheetData(e.parameter.sheet));
+    if (action === 'getUsers') return respond(getSheetData('Users').filter(u => u.aktif !== false));
     return respond({ error: 'Unknown action: ' + action }, 400);
   } catch (err) {
     return respond({ error: err.message }, 500);
@@ -45,6 +46,19 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
+
+    if (action === 'login') {
+      const nama = body.nama;
+      const pin = body.pin;
+      if (!nama || !pin) return respond({ success: false, error: 'Nama & PIN harus diisi' }, 400);
+
+      const users = getSheetData('Users').filter(u => u.aktif !== false);
+      const user = users.find(u => u.nama === nama && String(u.pin) === String(pin));
+      if (!user) return respond({ success: false, error: 'Nama atau PIN salah' }, 401);
+
+      return respond({ success: true, nama: user.nama, role: user.role || 'kasir' });
+    }
+
     let result;
     switch (action) {
       case 'insert':
@@ -229,5 +243,16 @@ function setup() {
     };
     settingsSheet.appendRow([JSON.stringify(defaultSettings)]);
   }
+
+  // Default users untuk kasir
+  const usersSheet = getSheet_('Users');
+  if (usersSheet.getLastRow() < 2) {
+    const defaultUsers = [
+      { id: 'u1', nama: 'Kasir 1', pin: '0000', role: 'kasir', aktif: true, createdAt: new Date().toISOString() },
+      { id: 'u2', nama: 'Kasir 2', pin: '1111', role: 'kasir', aktif: true, createdAt: new Date().toISOString() }
+    ];
+    defaultUsers.forEach(function (u) { usersSheet.appendRow([JSON.stringify(u)]); });
+  }
+
   Logger.log('Setup selesai. Semua sheet sudah dibuat.');
 }

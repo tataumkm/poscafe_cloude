@@ -2,7 +2,7 @@
 import { API_URL_CASHIER, API_KEY_CASHIER } from './config.js';
 
 async function getJson(url) {
-  const res = await fetch(url + '&apiKey=' + API_KEY_CASHIER);
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Gagal memuat data (' + res.status + ')');
   const json = await res.json();
   if (json.error) throw new Error(json.error);
@@ -10,10 +10,10 @@ async function getJson(url) {
 }
 
 async function postJson(payload) {
-  const res = await fetch(API_URL_CASHIER, {
+  const res = await fetch(API_URL_CASHIER + '?apiKey=' + API_KEY_CASHIER, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ ...payload, apiKey: API_KEY_CASHIER })
+    body: JSON.stringify(payload)
   });
   if (!res.ok) throw new Error('Gagal menyimpan data (' + res.status + ')');
   const json = await res.json();
@@ -21,15 +21,19 @@ async function postJson(payload) {
   return json.result;
 }
 
+function withKey(qs) {
+  return '?apiKey=' + API_KEY_CASHIER + (qs ? '&' + qs : '');
+}
+
 export const CashierApi = {
   initAll() {
-    return getJson(API_URL_CASHIER + '?action=initAll&apiKey=' + API_KEY_CASHIER);
+    return getJson(API_URL_CASHIER + withKey('action=initAll'));
   },
   getSheet(name) {
-    return getJson(API_URL_CASHIER + '?action=getSheet&sheet=' + encodeURIComponent(name) + '&apiKey=' + API_KEY_CASHIER);
+    return getJson(API_URL_CASHIER + withKey('action=getSheet&sheet=' + encodeURIComponent(name)));
   },
   getUsers() {
-    return getJson(API_URL_CASHIER + '?action=getUsers&apiKey=' + API_KEY_CASHIER);
+    return getJson(API_URL_CASHIER + withKey('action=getUsers'));
   },
   login(nama, pin) {
     return postJson({ action: 'login', nama, pin });
