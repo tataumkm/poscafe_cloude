@@ -1,40 +1,58 @@
 /**
- * CAFEKU — Backend API (Google Apps Script)
- * ------------------------------------------------------------
- * Setiap "tabel" = 1 sheet/tab, dengan HANYA 1 kolom (kolom A) berisi
- * string JSON per baris. Ini bikin baca/tulis jauh lebih cepat karena
- * Apps Script tidak perlu parsing banyak kolom, dan kita bisa
- * getRange(...).getValues() dalam 1 kali panggilan saja.
+ * CAFEKU KASIR — Backend API (Google Apps Script)
+ * ------------------------------------------------
+ * Sama seperti code.gs, tapi:
+ * 1. Mewajibkan API key di setiap request (proteksi dasar)
+ * 2. Hanya mengizinkan sheet tertentu (tidak ada Modal, Aset, BelanjaBahan)
+ * 3. Tambahan action: login (validasi user + PIN)
+ * 4. Penambahan sheet 'Users' untuk user management
  *
- * CARA DEPLOY:
- * 1. Buka https://sheets.google.com -> buat Spreadsheet baru, beri nama "CafekuDB".
- * 2. Extensions -> Apps Script. Hapus isi default, paste seluruh file ini.
- * 3. Klik Deploy -> New deployment -> pilih tipe "Web app".
+ * DEPLOY:
+ * 1. Buka Google Sheets (bisa pakai yang sama dengan owner, atau yang baru)
+ * 2. Extensions -> Apps Script. Paste file ini.
+ * 3. Deploy -> New deployment -> Web app
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 4. Copy URL Web App yang muncul (https://script.google.com/macros/s/xxxx/exec)
- *    Paste ke js/app.js pada variabel API_URL.
- * 5. Jalankan fungsi `setup()` sekali dari editor Apps Script (pilih fungsi
- *    "setup" di dropdown atas, lalu klik Run) untuk membuat semua sheet +
- *    data default (Settings, dsb).
- *
- * CATATAN CORS:
- * Frontend WAJIB kirim POST dengan header Content-Type: text/plain
- * (bukan application/json) supaya browser tidak mengirim preflight
- * OPTIONS request — karena Apps Script Web App tidak menghandle OPTIONS.
- * Ini sudah diatur otomatis di js/app.js, tidak perlu diubah.
+ * 4. Copy URL Web App -> paste ke js/config.js sebagai API_URL_CASHIER
+ * 5. Ubah API_KEY_CASHIER di config.js (bisa pakai nilai acak)
+ * 6. Buat sheet 'Users' dengan kolom A = JSON blob:
+ *    [{id, nama, pin, aktif, role}]
+ *    atau jalankan setupCashierUsers() untuk membuat data default.
  */
 
-const SHEETS = ['Modal', 'Aset', 'BelanjaBahan', 'Bahan', 'Menu', 'Penjualan', 'Settings', 'Kas', 'Promo', 'Users'];
-const CACHE_TTL_SECONDS = 20; // cache tiap sheet 20 detik -> tahan traffic tinggi
+const API_KEY_CASHIER = 'cafeku_kasir_2025';
+const ALLOWED_SHEETS_CASHIER = ['Menu', 'Bahan', 'Settings', 'Penjualan', 'Promo', 'Kas', 'Users'];
+const SHEETS = ALLOWED_SHEETS_CASHIER;
+const CACHE_TTL_SECONDS = 20;
+
+function respond(obj, code = 200) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function apiKeyValid(key) {
+  return typeof key === 'string' && key === API_KEY_CASHIER;
+}
+
+function isAllowedSheet(name) {
+  return ALLOWED_SHEETS_CASHIER.includes(name);
+}
 
 // ============ ENTRY POINTS ============
 
 function doGet(e) {
   try {
+    const apiKey = e.parameter.apiKey || e.parameter.key;
+    if (!apiKeyValid(apiKey)) return respond({ error: 'Unauthorized' }, 403);
+
     const action = e.parameter.action;
     if (action === 'initAll') return respond(getAllSheetsData());
-    if (action === 'getSheet') return respond(getSheetData(e.parameter.sheet));
+    if (action === 'getSheet') {
+      const sheet = e.parameter.sheet;
+      if (!isAllowedSheet(sheet)) return respond({ error: 'Forbidden sheet: ' + sheet }, 403);
+      return respond(getSheetData(sheet));
+    }
+    if (action === 'getUsers') return respond(getSheetData('Users').filter(u => u.aktif !== false));
     return respond({ error: 'Unknown action: ' + action }, 400);
   } catch (err) {
     return respond({ error: err.message }, 500);
@@ -44,37 +62,59 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+    const apiKey = body.apiKey || body.key;
+    if (!apiKeyValid(apiKey)) return respond({ error: 'Unauthorized' }, 403);
+
     const action = body.action;
+
+    if (action === 'login') {
+      return respond(doLogin(body));
+    }
+
+    // insert/update/delete — cek sheet
+    const sheet = body.sheet;
+    if (!isAllowedSheet(sheet)) return respond({ error: 'Forbidden sheet: ' + sheet }, 403);
+
     let result;
     switch (action) {
-      case 'insert':
-        result = insertRow(body.sheet, body.data);
-        break;
-      case 'update':
-        result = updateRow(body.sheet, body.id, body.data);
-        break;
-      case 'delete':
-        result = deleteRow(body.sheet, body.id);
-        break;
-      case 'batchUpdate':
-        result = batchUpdateRows(body.sheet, body.items);
-        break;
-      case 'batchInsert':
-        result = batchInsertRows(body.sheet, body.items);
-        break;
+      case 'insert':       result = insertRow(sheet, body.data); break;
+      case 'update':       result = updateRow(sheet, body.id, body.data); break;
+      case 'delete':       result = deleteRow(sheet, body.id); break;
+      case 'batchUpdate':  result = batchUpdateRows(sheet, body.items); break;
+      case 'batchInsert':  result = batchInsertRows(sheet, body.items); break;
       default:
         return respond({ error: 'Unknown action: ' + action }, 400);
     }
-    invalidateCache(body.sheet);
+    invalidateCache(sheet);
     return respond({ success: true, result: result });
   } catch (err) {
     return respond({ error: err.message }, 500);
   }
 }
 
-function respond(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+// ============ LOGIN ============
+
+function doLogin(body) {
+  const nama = body.nama;
+  const pin = body.pin;
+  if (!nama || !pin) return { success: false, error: 'Nama & PIN harus diisi' };
+
+  const users = getSheetData('Users').filter(u => u.aktif !== false);
+  const user = users.find(u => u.nama === nama && String(u.pin) === String(pin));
+  if (!user) return { success: false, error: 'Nama atau PIN salah' };
+
+  return { success: true, nama: user.nama, role: user.role || 'kasir' };
+}
+
+function setupCashierUsers() {
+  const usersSheet = getSheet_('Users');
+  if (usersSheet.getLastRow() < 2) {
+    const defaultUsers = [
+      { id: 'u1', nama: 'Kasir 1', pin: '0000', role: 'kasir', aktif: true, createdAt: new Date().toISOString() },
+      { id: 'u2', nama: 'Kasir 2', pin: '1111', role: 'kasir', aktif: true, createdAt: new Date().toISOString() },
+    ];
+    defaultUsers.forEach(u => usersSheet.appendRow([JSON.stringify(u)]));
+  }
 }
 
 // ============ SHEET HELPERS ============
@@ -101,27 +141,24 @@ function getSheetData(name) {
   const rows = [];
   if (lastRow >= 2) {
     const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-      values.forEach(function (r, idx) {
-        if (r[0]) {
-          try {
-            const obj = JSON.parse(r[0]);
-            if (obj.deleted) return; // soft-deleted, jangan dikirim
-            obj._row = idx + 2;
-            rows.push(obj);
-          } catch (e) { /* skip baris rusak */ }
-        }
-      });
+    values.forEach(function (r, idx) {
+      if (r[0]) {
+        try {
+          const obj = JSON.parse(r[0]);
+          if (obj.deleted) return;
+          obj._row = idx + 2;
+          rows.push(obj);
+        } catch (e) { /* skip baris rusak */ }
+      }
+    });
   }
-  // cache disimpan sebagai string, batasi ukuran (cache service max ~100KB/key)
-  try {
-    cache.put(cacheKey, JSON.stringify(rows), CACHE_TTL_SECONDS);
-  } catch (e) { /* kalau kepenuhan, skip cache saja */ }
+  try { cache.put(cacheKey, JSON.stringify(rows), CACHE_TTL_SECONDS); } catch (e) { /* skip cache */ }
   return rows;
 }
 
 function getAllSheetsData() {
   const result = {};
-  SHEETS.forEach(function (name) {
+  ALLOWED_SHEETS_CASHIER.forEach(function (name) {
     result[name] = getSheetData(name);
   });
   return result;
@@ -153,7 +190,6 @@ function insertRow(sheetName, data) {
   if (!data.id) data.id = Utilities.getUuid();
   const existing = findRowById_(sheet, data.id);
   if (existing !== -1) {
-    // upsert: update bila id sudah ada (cegah duplikat saat retry)
     data.updatedAt = new Date().toISOString();
     sheet.getRange(existing, 1).setValue(JSON.stringify(data));
   } else {
@@ -208,15 +244,12 @@ function deleteRow(sheetName, id) {
   return { id: id };
 }
 
-// ============ SETUP (jalankan sekali secara manual) ============
-
 function setup() {
-  SHEETS.forEach(function (name) { getSheet_(name); });
-
-  // Default pengaturan margin & platform online
+  ALLOWED_SHEETS_CASHIER.forEach(function (name) { getSheet_(name); });
+  // default Settings jika belum ada
   const settingsSheet = getSheet_('Settings');
   if (settingsSheet.getLastRow() < 2) {
-    const defaultSettings = {
+    settingsSheet.appendRow([JSON.stringify({
       id: 'settings-1',
       defaultMarginPercent: 40,
       platforms: [
@@ -226,8 +259,8 @@ function setup() {
         { nama: 'ShopeeFood', adminPercent: 20 }
       ],
       createdAt: new Date().toISOString()
-    };
-    settingsSheet.appendRow([JSON.stringify(defaultSettings)]);
+    })]);
   }
-  Logger.log('Setup selesai. Semua sheet sudah dibuat.');
+  setupCashierUsers();
+  Logger.log('Setup cashier selesai.');
 }

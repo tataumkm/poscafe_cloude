@@ -11,6 +11,7 @@ const state = {
   page: 'kasir',
   cart: [],            // {menuId, nama, qty, hargaJual, hpp}
   platform: 'Offline',
+  metodeBayar: 'tunai',
   adjustment: 0,
   catatan: '',
   menuKategoriFilter: 'Semua',
@@ -407,9 +408,16 @@ function renderCartInner() {
     </div>
     <div>
       <label>Platform</label>
-      <select id="input-platform">
-        ${getSettings().platforms.map(p => `<option value="${p.nama}" ${state.platform === p.nama ? 'selected' : ''}>${p.nama}${p.adminPercent ? ` (admin ${p.adminPercent}%)` : ''}</option>`).join('')}
-      </select>
+      <div class="btn-group" style="display:flex;gap:6px;flex-wrap:wrap">
+        ${getSettings().platforms.map(p => `<button class="btn btn-sm ${state.platform === p.nama ? 'btn-primary' : 'btn-ghost'}" data-set-platform="${p.nama}">${p.nama}${p.adminPercent ? ` (${p.adminPercent}%)` : ''}</button>`).join('')}
+      </div>
+    </div>
+    <div>
+      <label>Metode Bayar</label>
+      <div class="btn-group" style="display:flex;gap:6px">
+        <button class="btn btn-sm ${state.metodeBayar === 'tunai' ? 'btn-primary' : 'btn-ghost'}" data-set-metode="tunai">Tunai</button>
+        <button class="btn btn-sm ${state.metodeBayar === 'qris' ? 'btn-primary' : 'btn-ghost'}" data-set-metode="qris">QRIS</button>
+      </div>
     </div>
     <div class="row" style="margin-top:6px"><span class="k">Total Diterima</span><span class="v big" id="ct-total">${rupiah(grandTotal)}</span></div>
     <div class="row"><span class="k">Estimasi Laba</span><span class="v ${grandTotal - cartTotalHpp >= 0 ? 'positive' : 'negative'}" id="ct-laba">${rupiah(grandTotal - cartTotalHpp)}</span></div>
@@ -520,6 +528,7 @@ async function checkout() {
     tanggal: todayStr(),
     waktu: nowTimeStr(),
     platform: state.platform,
+    metodeBayar: state.metodeBayar,
     items: state.cart.map(c => ({ menuId: c.menuId, nama: c.nama, qty: c.qty, hargaJual: c.hargaJual, hpp: c.hpp })),
     subtotal: totalJual,
     diskon,
@@ -535,7 +544,25 @@ async function checkout() {
   toast('Transaksi siap dibayar');
   render();
   state.lastTrx = transaksi;
-  openPaymentSheet(transaksi);
+  if (state.metodeBayar === 'qris') {
+    openQrisConfirmSheet(transaksi);
+  } else {
+    openPaymentSheet(transaksi);
+  }
+}
+
+// ===== Konfirmasi QRIS (tanpa input nominal, langsung konfirmasi) =====
+function openQrisConfirmSheet(trx) {
+  const total = Number(trx.total || 0);
+  const html = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Pembayaran QRIS</h2><button class="btn-icon" data-close-pay>✕</button></div>
+    <div class="row"><span class="k">Total Tagihan</span><span class="v big">${rupiah(total)}</span></div>
+    <p style="text-align:center;color:#888;margin:16px 0">Pastikan pembayaran QRIS sudah diterima, lalu tap tombol di bawah.</p>
+    <button class="btn btn-primary" data-qris-confirm-ok style="width:100%;margin-bottom:8px">Sudah Bayar</button>
+    <button class="btn btn-ghost" data-pay-cancel style="width:100%">Batal</button>
+  `;
+  openSheet(html, 'qris-confirm');
 }
 
 // ===== Pembayaran & cetak struk (mobile-friendly, tanpa prompt/confirm) =====
@@ -612,10 +639,17 @@ async function doPay() {
   toast('Transaksi selesai ✓');
   render();
   const pref = getPrintPref();
-  if (pref.on && pref.mode === 'ble' && isBleSupported() && isPrinterConnected()) {
-    showPrintModal(trx, bayar);
-  } else if (pref.on) {
-    printReceipt(trx, bayar);
+  if (pref.on) {
+    state.printModalTrx = trx;
+    state.printModalBayar = bayar;
+    const html = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Cetak Nota</h2></div>
+    <p style="text-align:center;color:#888;margin:0 0 16px">Klik Cetak untuk mencetak, atau Selesai untuk melewati.</p>
+    <button class="btn btn-primary" data-print-modal-print style="width:100%;margin-bottom:8px">Cetak Nota</button>
+    <button class="btn btn-ghost" data-print-modal-done style="width:100%">Selesai</button>
+    `;
+    openSheet(html, 'print-modal');
   }
 }
 
@@ -671,9 +705,9 @@ function showPrintModal(trx, bayar) {
   state.printModalBayar = bayar;
   const html = `
     <div class="sheet-handle"></div>
-    <div class="sheet-head"><h2>Cetak Struk</h2></div>
-    <p style="text-align:center;color:#888;margin:0 0 16px">Klik Cetak untuk mencetak struk. Bisa dicetak beberapa kali.</p>
-    <button class="btn btn-primary" data-print-modal-print style="width:100%;margin-bottom:8px">Cetak</button>
+    <div class="sheet-head"><h2>Cetak Nota</h2></div>
+    <p style="text-align:center;color:#888;margin:0 0 16px">Klik Cetak untuk mencetak, atau Selesai untuk melewati.</p>
+    <button class="btn btn-primary" data-print-modal-print style="width:100%;margin-bottom:8px">Cetak Nota</button>
     <button class="btn btn-ghost" data-print-modal-done style="width:100%">Selesai</button>
   `;
   openSheet(html, 'print-modal');
@@ -697,6 +731,7 @@ function printDialog(trx, bayar, text) {
     <div class="pr-row"><span>Tanggal</span><span>${formatTanggal(trx.tanggal)}</span></div>
     <div class="pr-row"><span>Jam</span><span>${trx.waktu}</span></div>
     <div class="pr-row"><span>Platform</span><span>${escapeHtml(trx.platform || 'Offline')}</span></div>
+    <div class="pr-row"><span>Metode</span><span>${escapeHtml(trx.metodeBayar === 'qris' ? 'QRIS' : 'Tunai')}</span></div>
     <div class="pr-divider"></div>
     ${itemRows}
     <div class="pr-divider"></div>
@@ -777,7 +812,7 @@ function openMenuForm(menuId) {
   const existing = menuId ? getMenuList().find(m => m.id === menuId) : null;
   state.menuFormDraft = existing ? JSON.parse(JSON.stringify(existing)) : {
     id: null, nama: '', kategori: '', resep: [newResepRow()],
-    marginPercent: getSettings().defaultMarginPercent, hargaJualManual: '', aktif: true
+    marginPercent: getSettings().defaultMarginPercent, hargaJualManual: '', aktif: true, gambar: ''
   };
   openSheet(renderMenuFormSheet(), 'menu-form');
 }
@@ -802,6 +837,9 @@ function renderMenuFormSheet() {
 
     <label>Kategori</label>
     <input id="mf-kategori" value="${escapeAttr(d.kategori)}" placeholder="Kopi / Non-Kopi / Snack" />
+
+    <label>URL Gambar (opsional — untuk tampilan grid kasir)</label>
+    <input id="mf-gambar" value="${escapeAttr(d.gambar || '')}" placeholder="https://example.com/gambar.jpg" />
 
     <div class="section-title" style="margin-top:16px">Resep (Bahan Terpakai)</div>
     ${d.resep.map((r, i) => `
@@ -843,8 +881,6 @@ function renderMenuFormSheet() {
 // =========================================================
 function renderStokPage() {
   const bahanList = getBahanList();
-  const belanjaData = Store.get('BelanjaBahan');
-  console.log('[DEBUG renderStokPage] Store.get("BelanjaBahan") =', belanjaData.length, 'items', belanjaData);
   return `
     <div class="row" style="margin-bottom:4px">
       <div class="section-title" style="margin:0">Stok Bahan</div>
@@ -1300,6 +1336,17 @@ function renderLainnyaPage() {
       <button class="btn btn-primary" data-save-settings style="margin-top:12px">Simpan Pengaturan</button>
     </div>
 
+    <div class="section-title" style="margin-top:10px">User Kasir</div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div class="toggle-title">Kasir Harus Login</div><div class="hint">User + PIN kasir diperlukan untuk buka sesi kas.</div></div>
+        <button class="btn btn-primary btn-sm" data-open="user-form">+ User Baru</button>
+      </div>
+      <div style="margin-top:8px">
+        ${renderUserList()}
+      </div>
+    </div>
+
     <div class="card" style="margin-top:10px">
       <button class="btn btn-ghost" id="btn-manual-sync">${fa("sync")} Sinkron Ulang Sekarang</button>
       <div class="hint" style="text-align:center;margin-top:6px">Data disimpan otomatis. Sinkron manual berguna kalau kamu buka di HP lain.</div>
@@ -1340,6 +1387,78 @@ function renderLainnyaPage() {
     </div>
   `;
 }
+
+// ===== USER MANAGEMENT (Kasir) =====
+function renderUserList() {
+  const users = Store.get('Users');
+  if (!users.length) return `<div class="hint">Belum ada user kasir.</div>`;
+  return users.map(u => `
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="name">${escapeHtml(u.nama || '')}</div>
+          <div class="sub">PIN: ${u.pin || ''} • Role: ${u.role || 'kasir'} • ${u.aktif === false ? '<span class="badge low">Nonaktif</span>' : '<span class="badge ok">Aktif</span>'}</div>
+        </div>
+        <div style="text-align:right">
+          <button class="btn btn-ghost btn-sm" data-edit-user="${u.id}">Edit</button>
+          <button class="btn btn-ghost btn-sm" data-delete-user="${u.id}">Hapus</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openUserForm(userId) {
+  const existing = userId ? Store.get('Users').find(u => u.id === userId) : null;
+  const d = existing ? JSON.parse(JSON.stringify(existing)) : { id: null, nama: '', pin: '', role: 'kasir', aktif: true };
+  state.userFormDraft = d;
+  const html = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>${d.id ? 'Edit User' : 'User Baru'}</h2><button class="btn-icon" data-close-sheet>✕</button></div>
+    <div style="padding:14px">
+      <label>Nama</label>
+      <input id="uf-nama" value="${escapeAttr(d.nama)}" placeholder="Nama kasir" />
+      <label>PIN (angka)</label>
+      <input id="uf-pin" type="password" value="${escapeAttr(d.pin || '')}" placeholder="mis. 1234" inputmode="numeric" maxlength="6" />
+      <label>Role</label>
+      <select id="uf-role">
+        <option value="kasir" ${d.role === 'kasir' ? 'selected' : ''}>Kasir</option>
+        <option value="owner" ${d.role === 'owner' ? 'selected' : ''}>Owner</option>
+      </select>
+      <div class="toggle-row" style="margin-top:12px">
+        <div><div class="toggle-title">Aktif</div><div class="hint">Nonaktifkan bila user tidak boleh login.</div></div>
+        <label class="switch">
+          <input type="checkbox" id="uf-aktif" ${d.aktif !== false ? 'checked' : ''} />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:12px" data-save-user>${d.id ? 'Update' : 'Simpan'}</button>
+    </div>
+  `;
+  openSheet(html, 'user-form');
+}
+
+function saveUserForm() {
+  const d = state.userFormDraft;
+  if (!d) return;
+  d.nama = document.getElementById('uf-nama')?.value.trim() || '';
+  d.pin = document.getElementById('uf-pin')?.value.trim() || '';
+  d.role = document.getElementById('uf-role')?.value || 'kasir';
+  d.aktif = document.getElementById('uf-aktif')?.checked;
+  if (!d.nama) { toast('Nama wajib diisi'); return; }
+  if (!d.pin) { toast('PIN wajib diisi'); return; }
+  if (d.id) {
+    Store.update('Users', d.id, d);
+  } else {
+    d.id = uid();
+    Store.insert('Users', d);
+  }
+  closeSheet();
+  toast('User tersimpan ✓');
+  render();
+}
+
+// ===== END USER MANAGEMENT =====
 
 function openRestore() {
   const deletedMenu = Store.getWithDeleted('Menu').filter(m => m.deleted);
@@ -1475,7 +1594,7 @@ document.addEventListener('click', async (e) => {
 
   if (t.closest('[data-close-sheet]')) { closeSheet(); return; }
   if (t.closest('[data-print-modal-print]')) {
-    if (state.printModalTrx) printReceiptBLE(state.printModalTrx, state.printModalBayar);
+    if (state.printModalTrx) printReceipt(state.printModalTrx, state.printModalBayar);
     return;
   }
   if (t.closest('[data-print-modal-done]')) { state.printModalTrx = null; state.printModalBayar = null; closeSheet(); return; }
@@ -1487,6 +1606,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.payClr !== undefined) { payStr = ''; renderPay(); return; }
   if (t.dataset.payExact !== undefined) { payStr = String(Number((state.lastTrx || {}).total) || 0); renderPay(); return; }
   if (t.dataset.payOk !== undefined) { doPay(); return; }
+  if (t.dataset.qrisConfirmOk !== undefined) { payStr = String(Number((state.lastTrx || {}).total) || 0); doPay(); return; }
   if (t.dataset.trxToggle) {
     const body = document.getElementById('trx-body-' + t.dataset.trxToggle);
     const txCard = t.closest('.rep-trx');
@@ -1507,6 +1627,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.open === 'aset-form') return openAsetForm();
   if (t.dataset.open === 'belanja-form') return openBelanjaForm();
   if (t.dataset.open === 'menu-form') return openMenuForm(null);
+  if (t.dataset.open === 'user-form') return openUserForm(null);
   if (t.dataset.openRiwayat !== undefined) return openRiwayat();
   if (t.dataset.exportCsv !== undefined) return exportCsvHarian();
   if (t.dataset.openRestore !== undefined) return openRestore();
@@ -1536,6 +1657,8 @@ document.addEventListener('click', async (e) => {
     renderCartRegion(); return;
   }
   if (t.dataset.cartRemove !== undefined) { state.cart.splice(+t.dataset.cartRemove, 1); renderCartRegion(); return; }
+  if (t.dataset.setPlatform) { state.platform = t.dataset.setPlatform; renderCartRegion(); return; }
+  if (t.dataset.setMetode) { state.metodeBayar = t.dataset.setMetode; renderCartRegion(); return; }
   if (t.id === 'btn-checkout') return checkout();
 
   // MENU
@@ -1562,6 +1685,12 @@ document.addEventListener('click', async (e) => {
   // LAINNYA
   if (t.dataset.saveModal !== undefined) return saveModalForm();
   if (t.dataset.saveAset !== undefined) return saveAsetForm();
+  if (t.dataset.editUser) return openUserForm(t.dataset.editUser);
+  if (t.dataset.deleteUser) {
+    if (confirm('Hapus user ini?')) { await Store.remove('Users', t.dataset.deleteUser); render(); }
+    return;
+  }
+  if (t.dataset.saveUser !== undefined) return saveUserForm();
   if (t.dataset.addPlatform !== undefined) {
     const s = getSettings();
     s.id = s.id || 'settings-1';
@@ -1613,7 +1742,6 @@ document.addEventListener('input', (e) => {
     if (elLaba) { elLaba.textContent = rupiah(grandTotal - cartTotalHpp); elLaba.className = 'v ' + (grandTotal - cartTotalHpp >= 0 ? 'positive' : 'negative'); }
     return;
   }
-  if (t.id === 'input-platform') return; // handled on change
   if (t.id === 'lap-tanggal') { state.laporanTanggal = t.value; render(); return; }
 
   // form menu -> live update HPP preview TANPA re-render (biar fokus tidak hilang)
@@ -1669,11 +1797,6 @@ document.addEventListener('change', (e) => {
     renderCartRegion();
     return;
   }
-  if (t.id === 'input-platform') {
-    state.platform = t.value;
-    // update default harga item yang belum diubah manual? sederhanakan: biarkan user edit manual.
-    return;
-  }
   if (t.id === 'bf-bahan-select') {
     const wrap = document.getElementById('bf-new-bahan-wrap');
     if (wrap) wrap.style.display = t.value === '__new__' ? 'block' : 'none';
@@ -1710,6 +1833,7 @@ function syncMenuDraftFromDom() {
   const kat = document.getElementById('mf-kategori'); if (kat) d.kategori = kat.value;
   const margin = document.getElementById('mf-margin'); if (margin) d.marginPercent = numOnly(margin.value);
   const hm = document.getElementById('mf-harga-manual'); if (hm) d.hargaJualManual = numOnly(hm.value);
+  const gambar = document.getElementById('mf-gambar'); if (gambar) d.gambar = gambar.value.trim();
   document.querySelectorAll('[data-resep-bahan]').forEach(el => {
     d.resep[+el.dataset.resepBahan].bahanId = el.value;
   });
@@ -1745,7 +1869,8 @@ async function saveMenuForm() {
     resep: d.resep.map(r => ({ bahanId: r.bahanId, qty: Number(r.qty) })),
     marginPercent: Number(d.marginPercent) || 0,
     hargaJualManual: d.hargaJualManual ? Number(d.hargaJualManual) : null,
-    aktif: true
+    aktif: true,
+    gambar: d.gambar || '',
   };
   if (d.id) await Store.update('Menu', d.id, payload);
   else await Store.insert('Menu', payload);
@@ -1817,14 +1942,9 @@ async function saveBelanjaForm() {
     avcoSesudah: avcoBaru, supplier
   });
 
-  console.log('[DEBUG saveBelanja] after insert, Store.data.BelanjaBahan =', JSON.parse(JSON.stringify(Store.get('BelanjaBahan'))));
-  console.log('[DEBUG saveBelanja] queue =', JSON.parse(JSON.stringify(Store._getQueue())));
-
   closeSheet();
   toast(`Belanja tersimpan ✓ — AVCO ${bahanNama}: ${rupiah(avcoBaru)}/${satuanDasar}`);
   render();
-
-  console.log('[DEBUG saveBelanja] after render, Store.data.BelanjaBahan =', JSON.parse(JSON.stringify(Store.get('BelanjaBahan'))));
 }
 
 async function saveBahanEdit(id) {

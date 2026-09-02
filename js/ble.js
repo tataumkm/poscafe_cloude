@@ -55,7 +55,9 @@ export function buildEscPos(trx, bayar) {
     '   STRUK KASIR',
     '',
     (trx.noInvoice || ''),
-    (trx.platform || 'OFFLINE')
+    (trx.platform || 'OFFLINE'),
+    (trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI'),
+    (trx.oleh ? 'OLEH ' + trx.oleh.toUpperCase() : '')
   ];
   const body = [];
   (trx.items || []).forEach(it => {
