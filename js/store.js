@@ -182,25 +182,31 @@ export const Store = {
       const q = this._getQueue();
       const job = q.find(j => j.attempts < MAX_ATTEMPTS && (!j.nextRetry || j.nextRetry <= Date.now()));
       if (!job) break;
-      const idx = q.indexOf(job);
+      const jobKey = job.action + '|' + job.sheet + '|' + (job.id || '') + '|' + (job.ts || '');
       try {
         if (job.action === 'insert') await Api.insert(job.sheet, job.data);
         else if (job.action === 'update') await Api.update(job.sheet, job.id, job.data);
         else if (job.action === 'delete') await Api.remove(job.sheet, job.id);
         else if (job.action === 'batchUpdate') await Api.batchUpdate(job.sheet, job.items);
-        q.splice(idx, 1);
-        this._setQueue(q);
+        const fresh = this._getQueue();
+        const fi = fresh.findIndex(j => j.action + '|' + j.sheet + '|' + (j.id || '') + '|' + (j.ts || '') === jobKey);
+        if (fi > -1) fresh.splice(fi, 1);
+        this._setQueue(fresh);
       } catch (err) {
-        job.attempts = (job.attempts || 0) + 1;
-        if (job.attempts >= MAX_ATTEMPTS) {
-          q.splice(idx, 1);
-          this._setQueue(q);
-          console.error('Queue job gagal permanen setelah', MAX_ATTEMPTS, 'x:', job);
-          try { window.dispatchEvent(new CustomEvent('store:failed', { detail: { sheet: job.sheet, id: job.id || job.items } })); } catch (e) {}
-        } else {
-          job.nextRetry = Date.now() + Math.pow(2, job.attempts) * 5000;
-          this._setQueue(q);
+        const fresh = this._getQueue();
+        const fi = fresh.findIndex(j => j.action + '|' + j.sheet + '|' + (j.id || '') + '|' + (j.ts || '') === jobKey);
+        if (fi > -1) {
+          const fj = fresh[fi];
+          fj.attempts = (fj.attempts || 0) + 1;
+          if (fj.attempts >= MAX_ATTEMPTS) {
+            fresh.splice(fi, 1);
+            console.error('Queue job gagal permanen setelah', MAX_ATTEMPTS, 'x:', fj);
+            try { window.dispatchEvent(new CustomEvent('store:failed', { detail: { sheet: fj.sheet, id: fj.id || fj.items } })); } catch (e) {}
+          } else {
+            fj.nextRetry = Date.now() + Math.pow(2, fj.attempts) * 5000;
+          }
         }
+        this._setQueue(fresh);
       }
     }
     console.log('[DEBUG Store._flush] END, remaining queue =', this._getQueue().length);
