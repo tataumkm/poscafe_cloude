@@ -107,7 +107,14 @@ export async function connectPrinter() {
   if (typeof navigator === 'undefined' || !navigator.bluetooth) {
     throw new Error('Web Bluetooth tidak didukung di perangkat ini (butuh Android + Chrome).');
   }
-  device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [] });
+  device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [
+      '0000ffe0-0000-1000-8000-00805f9b34fb',
+      '000018f0-0000-1000-8000-00805f9b34fb',
+      '0000fee7-0000-1000-8000-00805f9b34fb',
+    ]
+  });
   let server;
   try {
     server = await device.gatt.connect();

@@ -611,8 +611,12 @@ async function doPay() {
   
   toast('Transaksi selesai ✓');
   render();
-  if (getPrintPref().on) printReceipt(trx, bayar);
-  else toast('Transaksi selesai ✓');
+  const pref = getPrintPref();
+  if (pref.on && pref.mode === 'ble' && isBleSupported() && isPrinterConnected()) {
+    showPrintModal(trx, bayar);
+  } else if (pref.on) {
+    printReceipt(trx, bayar);
+  }
 }
 
 function closePayment() {
@@ -660,6 +664,19 @@ async function printReceiptBLE(trx, bayar) {
     toast('Printer gagal: ' + err.message);
     return false;
   }
+}
+
+function showPrintModal(trx, bayar) {
+  state.printModalTrx = trx;
+  state.printModalBayar = bayar;
+  const html = `
+    <div class="sheet-handle"></div>
+    <div class="sheet-head"><h2>Cetak Struk</h2></div>
+    <p style="text-align:center;color:#888;margin:0 0 16px">Klik Cetak untuk mencetak struk. Bisa dicetak beberapa kali.</p>
+    <button class="btn btn-primary" data-print-modal-print style="width:100%;margin-bottom:8px">Cetak</button>
+    <button class="btn btn-ghost" data-print-modal-done style="width:100%">Selesai</button>
+  `;
+  openSheet(html, 'print-modal');
 }
 
 function printDialog(trx, bayar, text) {
@@ -1455,6 +1472,11 @@ document.addEventListener('click', async (e) => {
   if (nav) { state.page = nav.dataset.nav; render(); return; }
 
   if (t.closest('[data-close-sheet]')) { closeSheet(); return; }
+  if (t.closest('[data-print-modal-print]')) {
+    if (state.printModalTrx) printReceiptBLE(state.printModalTrx, state.printModalBayar);
+    return;
+  }
+  if (t.closest('[data-print-modal-done]')) { state.printModalTrx = null; state.printModalBayar = null; closeSheet(); return; }
   if (t.closest('[data-close-pay]')) { closePayment(); return; }
   if (t.closest('[data-pay-cancel]')) { closePayment(); return; }
   if (t.dataset.payAmount !== undefined) { payStr = String(Number(t.dataset.payAmount) || 0); renderPay(); return; }
