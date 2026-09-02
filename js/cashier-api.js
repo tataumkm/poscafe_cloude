@@ -15,6 +15,11 @@ async function postJson(payload) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(payload)
   });
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error('POST failed:', res.status, txt);
+    throw new Error('Gagal menyimpan data (' + res.status + ')');
+  }
   if (!res.ok) throw new Error('Gagal menyimpan data (' + res.status + ')');
   const json = await res.json();
   if (json.error) throw new Error(json.error);

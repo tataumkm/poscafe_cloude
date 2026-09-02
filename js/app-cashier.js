@@ -198,18 +198,25 @@ function renderTabContent() {
 function renderLogin() {
   const user = CashierAuth.getUser();
   const nama = user ? user.nama : '';
-  const selectedNama = (state.users || []).find(u => u.nama === nama);
   return `
     <div class="cashier-login">
+      <div class="cl-logo"><i class="fa fa-utensils"></i></div>
       <h1>Cafeku Kasir</h1>
-      <div class="cl-sub">Pilih nama & masukkan PIN untuk memulai sesi kasir</div>
-      <select id="cl-nama">
-        <option value="">— Pilih User —</option>
-        ${(state.users || []).map(u => `<option value="${escapeAttr(u.nama)}" ${u.nama === nama ? 'selected' : ''}>${escapeHtml(u.nama)}</option>`).join('')}
-      </select>
-      <input id="cl-pin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" />
-      <div class="cl-pin" id="cl-keypad">
-        ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="pay-key" data-pin-key="${n}">${n}</button>`).join('')}
+      <div class="cl-sub">Pilih nama & masukkan PIN untuk memulai sesi</div>
+      <div class="cl-field">
+        <label>Kasir</label>
+        <select id="cl-nama">
+          <option value="">— Pilih User —</option>
+          ${(state.users || []).map(u => `<option value="${escapeAttr(u.nama)}" ${u.nama === nama ? 'selected' : ''}>${escapeHtml(u.nama)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="cl-field">
+        <label>PIN (6 digit)</label>
+        <input id="cl-pin" type="password" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off" readonly />
+      </div>
+      <div class="cl-keypad">
+        ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="pin-key" data-pin-key="${n}">${n}</button>`).join('')}
+        <button class="pin-key pin-del" data-pin-del><i class="fa fa-backspace"></i></button>
       </div>
       <button class="btn btn-primary cl-btn" data-login-btn>Masuk</button>
     </div>
@@ -340,9 +347,15 @@ function renderSesiTab() {
       <div class="sesi-kas-card">
         <div class="sk-row"><span class="k">Tanggal</span><span class="v">${today}</span></div>
         <div class="sk-row"><span class="k">Kasir</span><span class="v">${CashierAuth.getUser()?.nama || ''}</span></div>
-        <label>Saldo Awal Kas (Rp)</label>
-        <input type="number" id="sk-saldo-awal" placeholder="mis. 100000" />
+        <div class="num-input-wrap">
+          <label>Saldo Awal Kas (Rp)</label>
+          <input type="text" id="sk-saldo-awal" inputmode="numeric" placeholder="mis. 100000" autocomplete="off" readonly />
+        </div>
         <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-buka>Buka Sesi Kas</button>
+        <div class="num-keypad" data-target="sk-saldo-awal" style="display:none">
+          ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
+          <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
+        </div>
       </div>
     `;
   }
@@ -367,8 +380,14 @@ function renderSesiOpen() {
       <div class="sk-row"><span class="k">Transaksi Tunai</span><span class="v">${tunaiTransaksi.length} ×</span></div>
       <div class="sk-row"><span class="k">Total Tunai Masuk</span><span class="v">${rupiah(totalTunai)}</span></div>
       <div class="sk-total"><span>Total Kas (teori)</span><span>${rupiah(harusnya)}</span></div>
-      <label>Uang di Petungku Sekarang (Rp)</label>
-      <input type="number" id="sk-saldo-akhir" placeholder="mis. ${harusnya.toLocaleString('id-ID')}" value="${harusnya}" />
+      <div class="num-input-wrap">
+        <label>Uang di Petungku Sekarang (Rp)</label>
+        <input type="text" id="sk-saldo-akhir" inputmode="numeric" placeholder="mis. ${harusnya.toLocaleString('id-ID')}" value="${harusnya}" autocomplete="off" readonly />
+      </div>
+      <div class="num-keypad" data-target="sk-saldo-akhir" style="display:none">
+        ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
+        <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
+      </div>
       <div class="sk-row" style="margin-top:8px"><span class="k">Selisih</span><span class="v" id="sk-selisih">${rupiah(0)}</span></div>
       <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-tutup>Tutup Sesi & Cetak Laporan</button>
     </div>
@@ -897,6 +916,11 @@ document.addEventListener('click', async (e) => {
     if (pinEl && pinEl.value.length < 6) pinEl.value += t.dataset.pinKey;
     return;
   }
+  if (t.dataset.pinDel !== undefined) {
+    const pinEl = document.getElementById('cl-pin');
+    if (pinEl) pinEl.value = pinEl.value.slice(0, -1);
+    return;
+  }
 
   // Logout
   if (t.dataset.logout !== undefined) { handleLogout(); return; }
@@ -930,6 +954,27 @@ document.addEventListener('click', async (e) => {
   }
   if (t.id === 'btn-checkout') return checkoutCashier();
   if (t.dataset.checkoutBtn !== undefined) return checkoutCashier();
+
+  // Numeric Keypad Handlers
+  if (t.dataset.num !== undefined) {
+    const targetEl = document.getElementById('sk-saldo-awal');
+    const targetEl2 = document.getElementById('sk-saldo-akhir');
+    let val = t.dataset.num;
+    // Add to current visible input
+    if (targetEl && !targetEl.disabled && targetEl.readOnly) {
+      if (targetEl.value.length < 16) targetEl.value += val;
+    } else if (targetEl2 && !targetEl2.disabled && targetEl2.readOnly) {
+      if (targetEl2.value.length < 16) targetEl2.value += val;
+    }
+    return;
+  }
+  if (t.dataset.numDel !== undefined) {
+    const targetEl = document.getElementById('sk-saldo-awal');
+    const targetEl2 = document.getElementById('sk-saldo-akhir');
+    if (targetEl && targetEl.value) targetEl.value = targetEl.value.slice(0, -1);
+    if (targetEl2 && targetEl2.value) targetEl2.value = targetEl2.value.slice(0, -1);
+    return;
+  }
 
   // Category filter
   if (t.dataset.kategori) {
