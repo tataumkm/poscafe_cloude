@@ -1,5 +1,16 @@
-// Cashier API client — sama seperti api.js, tapi semua request kirim apiKey
+// Cashier API client — works with both owner backend (no auth) and cashier backend (with API key)
 import { API_URL_CASHIER, API_KEY_CASHIER } from './config.js';
+
+// Detect if using owner backend (no API key needed) or cashier backend (needs API key)
+const USE_API_KEY = API_URL_CASHIER.includes('AKfycbwQEvnawOQlhAfH9l1gMzZbDfXfT8hUob1D-rCSCQDlUzY8g5FHLvS1NoJjs7_8fB9ZJg');
+
+function buildUrl(qs) {
+  const base = API_URL_CASHIER + '?';
+  if (USE_API_KEY) {
+    return base + 'apiKey=' + API_KEY_CASHIER + (qs ? '&' + qs : '');
+  }
+  return base + (qs ? qs : '');
+}
 
 async function getJson(url) {
   console.log('[DEBUG api] GET:', url);
@@ -16,7 +27,10 @@ async function getJson(url) {
 }
 
 async function postJson(payload) {
-  const res = await fetch(API_URL_CASHIER + '?apiKey=' + API_KEY_CASHIER, {
+  const url = USE_API_KEY 
+    ? API_URL_CASHIER + '?apiKey=' + API_KEY_CASHIER 
+    : API_URL_CASHIER;
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(payload)
@@ -32,19 +46,15 @@ async function postJson(payload) {
   return json.result;
 }
 
-function withKey(qs) {
-  return '?apiKey=' + API_KEY_CASHIER + (qs ? '&' + qs : '');
-}
-
 export const CashierApi = {
   initAll() {
-    return getJson(API_URL_CASHIER + withKey('action=initAll'));
+    return getJson(buildUrl('action=initAll'));
   },
   getSheet(name) {
-    return getJson(API_URL_CASHIER + withKey('action=getSheet&sheet=' + encodeURIComponent(name)));
+    return getJson(buildUrl('action=getSheet&sheet=' + encodeURIComponent(name)));
   },
   getUsers() {
-    return getJson(API_URL_CASHIER + withKey('action=getUsers'));
+    return getJson(buildUrl('action=getUsers'));
   },
   login(nama, pin) {
     console.log('[DEBUG api] login:', { nama, pin });
