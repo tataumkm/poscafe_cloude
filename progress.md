@@ -176,3 +176,51 @@ Perbaikan:
 - [#9] Queue dedup di `store.js` (anti overwrite).
 - Restore UI untuk soft-deleted items (kalau diperlukan).
 - Hapus field `_row` agar tidak tersimpan/null.
+
+---
+
+## 2026-09-02 — Cashier Standalone PWA + User Auth + Print Modal Fix
+
+### Fitur Baru: Cashier Mode (`cashier/` + `js/app-cashier.js`)
+- PWA terpisah (`cashier/cashier.webmanifest`) — installable di HP kasir tanpa ganggu owner app
+- Login user + PIN (nama dropdown + numpad PIN)
+- User management di owner app (Lainnya → User Kasir)
+- Tabs: Kasir / Riwayat / Promo / Sesi Kas / Stok (read-only)
+- Menu grid dengan gambar (field `gambar` baru di schema Menu)
+- Bypass stok di kasir (bisa jual walau stok habis — tidak mengurang stok)
+- Sesi kas: buka (saldo awal) → tutup (hitung selisih) → laporan hari ini → download PNG/PDF
+- Metode bayar: Tunai (numpad) / QRIS (konfirmasi "Sudah Bayar")
+  → Kedua path berakhir di print modal yang sama
+- Print modal: tombol "Cetak Nota" (bisa klik berulang untuk customer/dapur/backup) + "Selesai"
+- Print receipt: BLE printer (ESC/POS) atau `window.print()` dialog
+- localStorage terpisah (prefix `cafeku_cashier_`) — tidak bentrok dengan owner app
+
+### Bug Fix: Print Modal di Owner App
+- `doPay()` → sempre buka print modal (BLE dan manual)
+- "Cetak Nota" → `printReceipt()` (handle BLE + dialog)
+- "Selesai" → tutup modal, bersihkan state
+
+### File Baru
+- `backend/code-cashier.gs` — GAS backend cashier (auth API key + login endpoint + Users sheet)
+- `js/app-cashier.js` — Entry point SPA kasir
+- `js/cashier-api.js` — API client dengan auth key
+- `js/cashier-store.js` — Store kasir (prefix localStorage beda)
+- `js/cashier-auth.js` — Login/token management
+- `cashier/index.html`, `cashier/cashier.webmanifest`, `cashier/css/cashier.css`
+- `cashier/icons/icon-192.png`, `cashier/icons/icon-512.png`
+
+### Perubahan di File Existing
+- `js/config.js` — tambah `API_URL_CASHIER`, `API_KEY_CASHIER`
+- `js/utils.js` — pindah `getPrintPref`/`setPrintPref` ke sini (shared)
+- `js/app.js` — import `getPrintPref` dari utils, tambah field `gambar` di Menu, User Management (Lainnya)
+- `js/ble.js` — `buildEscPos` include metode bayar + kasir nama
+- `backend/code.gs` — tambah `Users` ke SHEETS list
+
+### Deploy Cashier
+1. Deploy `backend/code-cashier.gs` → Web App baru (Anyone, Execute as Me)
+2. Edit `backend/code-cashier.gs` → ganti `API_KEY_CASHIER` jika mau custom
+3. Run `setup()` di GAS editor untuk buat sheet `Users` default + sheet lain
+4. Ganti `API_URL_CASHIER` di `js/config.js` dengan URL web app kasir
+5. Buka `cashier/index.html` di browser → login dengan user default
+6. "Add to Home Screen" / "Install" untuk PWA standalone
+

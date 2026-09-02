@@ -8,11 +8,8 @@ import {
   disconnectPrinter, testPrint, buildEscPos, printBytes
 } from './ble.js';
 import {
-  getPrintPref
-} from './config.js';
-import {
   rupiah, numOnly, todayStr, nowTimeStr,
-  hitungHpp, hitungHargaSaran, uid, toast
+  hitungHpp, hitungHargaSaran, uid, toast, getPrintPref
 } from './utils.js';
 
 // ================= STATE =================
@@ -411,7 +408,7 @@ function renderCartDrawer() {
       <div class="cashier-cart-drawer" id="cart-drawer">
         <div class="cd-header">
           <span>Keranjang</span>
-          <button class="cd-close" data-cart-close>✕</button>
+          <button class="cd-close" data-cart-toggle="close">✕</button>
         </div>
         <div class="cd-items">
           <div class="empty" style="padding:20px;text-align:center">Keranjang masih kosong.</div>
@@ -441,7 +438,7 @@ function renderCartDrawer() {
     <div class="cashier-cart-drawer open" id="cart-drawer">
       <div class="cd-header">
         <span>Keranjang</span>
-        <button class="cd-close" data-cart-close>✕</button>
+        <button class="cd-close" data-cart-toggle="close">✕</button>
       </div>
       <div class="cd-items">
         ${cartItems}
@@ -504,7 +501,7 @@ function toggleCartDrawer(show) {
   const container = document.getElementById('cart-drawer-container');
   if (container) {
     container.innerHTML = renderCartDrawer();
-    container.style.display = 'block';
+    container.style.display = show ? 'block' : 'none';
   }
 }
 
@@ -921,14 +918,12 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.setPlatform) { state.platform = t.dataset.setPlatform; renderCartRegion(); return; }
   if (t.dataset.setMetode) { state.metodeBayar = t.dataset.setMetode; renderCartRegion(); return; }
 
-  // Open cart drawer
+  // Open / close cart drawer
   if (t.dataset.cartToggle === 'open') {
     toggleCartDrawer(true);
     return;
   }
-
-  
-  if (t.dataset.cartClose !== undefined) {
+  if (t.dataset.cartToggle === 'close') {
     const container = document.getElementById('cart-drawer-container');
     if (container) container.style.display = 'none';
     return;

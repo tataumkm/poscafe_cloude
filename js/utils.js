@@ -69,3 +69,14 @@ export function toast(msg) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2200);
 }
+
+export function getPrintPref() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem('cafeku_print_pref') || '{}') || {}; } catch (e) {}
+  if (p.on === undefined) p.on = true;
+  if (!p.mode) p.mode = 'manual';
+  return p;
+}
+export function setPrintPref(p) {
+  localStorage.setItem('cafeku_print_pref', JSON.stringify(p));
+}

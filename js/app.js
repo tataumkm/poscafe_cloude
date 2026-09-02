@@ -1,7 +1,7 @@
 import { Api } from './api.js';
 import { Store } from './store.js';
 import { SHEETS } from './config.js';
-import { rupiah, numOnly, todayStr, nowTimeStr, formatTanggal, hitungHpp, hitungHargaSaran, hitungAvco, uid, toast } from './utils.js';
+import { rupiah, numOnly, todayStr, nowTimeStr, formatTanggal, hitungHpp, hitungHargaSaran, hitungAvco, uid, toast, getPrintPref, setPrintPref } from './utils.js';
 import { isBleSupported, isPrinterConnected, getPrinterName, connectPrinter, disconnectPrinter, printBytes, testPrint, buildEscPos } from './ble.js';
 
 const OBJECT_SHEETS = SHEETS.filter(s => s !== 'Settings');
@@ -59,15 +59,6 @@ function getSettings() {
   const s = Store.get('Settings')[0];
   return s || { defaultMarginPercent: 40, platforms: [{ nama: 'Offline', adminPercent: 0 }] };
 }
-function getPrintPref() {
-  let p = {};
-  try { p = JSON.parse(localStorage.getItem('cafeku_print_pref') || '{}') || {}; } catch (e) {}
-  // normalisasi default: print aktif, metode dialog (manual)
-  if (p.on === undefined) p.on = true;
-  if (!p.mode) p.mode = 'manual';
-  return p;
-}
-function setPrintPref(p) { localStorage.setItem('cafeku_print_pref', JSON.stringify(p)); }
 
 function getPendingTrx() {
   try { return JSON.parse(localStorage.getItem('cafeku_pending_trx') || 'null'); }
