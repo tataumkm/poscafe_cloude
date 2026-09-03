@@ -1,13 +1,14 @@
 // =========================================================
 // BLE PRINTER — Web Bluetooth + ESC/POS (thermal 58mm)
 // ---------------------------------------------------------
-// Menghubungkan printer thermal Bluetooth (BLE UART), mengirim
-// byte ESC/POS langsung (tanpa dialog print browser).
+// RPP02N (chipset khusus) expose BLE GATT:
+//   Primary service   : 49535343-FE7D-4AE5-8FA9-9AFD205E455
+//   TX/write chars    : 49535343-8841-43F4-A8D4-ECBE34729BB3
+//                       (WRITE + WRITE WITHOUT RESPONSE)
+// Ini diverifikasi via nRF Connect (bukan asumsi universal).
 //
-// CATATAN TERBATAS:
-// - Hanya jalan di Android + Chrome/Edge. iOS/Safari TIDAK support.
-// - Banyak printer thermal (mis. GP-5890BT) pakai BT Classic (SPP),
-//   bukan BLE -> tidak connect di sini. Fallback ke share/print tersedia.
+// arsitektur tetap: GitHub Pages + Google Apps Script + Sheet.
+// printer BLE langsung lewat browser (Android + Chrome/Edge).
 // =========================================================
 
 const STORAGE_DEVICE = 'cafeku_bt_device';
@@ -24,6 +25,41 @@ const esc = {
   text: (s) => new TextEncoder().encode((s || '') + '\n')
 };
 
+// ------------------------------------------------------------------
+// Konfigurasi printer RPP02N (dari hasil nRF Connect)
+// ------------------------------------------------------------------
+const RPP_HOST = {
+  serviceUUID: '49535343-fe7d-4ae5-8fa9-9afd205e455',
+  txWriteUUID: '49535343-8841-43f4-a8d4-ecbe34729bb3', // WRITE + WRITE_NO_RESPONSE
+};
+
+// Cadangan: UUID umum produk thermal lain (untuk auto-detection).
+// RPP02N dikenali lewat UUID_HOST di atas; sisa ini hanya fallback.
+const UUID_FALLBACK_SERVICES = [
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb',
+  '0000fee7-0000-1000-8000-00805f9b34fb',
+  '000018f0-0000-1000-8000-00805f9b34fb',
+];
+const UUID_WRITE_PRIORITY = [
+  '0000ffe1-0000-1000-8000-00805f9b34fb',
+  '0000ffe2-0000-1000-8000-00805f9b34fb',
+  '0000fff2-0000-1000-8000-00805f9b34fb',
+];
+
+const log = (level, ...args) => {
+  const pfx = `[BLE ${level.toUpperCase()}]`;
+  if (level === 'error') console.error(pfx, ...args);
+  else if (level === 'warn') console.warn(pfx, ...args);
+  else console.log(pfx, ...args);
+};
+
+let device = null;
+let server = null;
+let txChar = null;
+
+const ms = n => new Promise(r => setTimeout(r, n));
+
 function concatBytes(arrays) {
   let len = 0;
   arrays.forEach(a => len += a.length);
@@ -37,206 +73,264 @@ function escWidth(ch) {
   const w = (ch || '').length;
   return w < 32 ? 32 : w > 48 ? 48 : w;
 }
+
 function padRight(s, width) { return (s || '') + ' '.repeat(Math.max(0, width - (s || '').length)); }
 
-// Struk -> byte ESC/POS
+function trunc(s, w) {
+  const t = String(s || '');
+  return t.length > w ? t.slice(0, w) : t;
+}
+
+// Struk -> byte ESC/POS (lebar 48 kolom, sesuai kertas 58mm)
 export function buildEscPos(trx, bayar) {
-  const W = 48; // lebar kertas 48 kolom (RPP02N)
+  const W = 48;
   const rup = n => 'Rp' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
   const total = Number(trx.total || 0);
   const kembalian = Number(bayar || 0) - total;
   const shop = (trx.namaToko || 'CAFEKU').toUpperCase();
 
   const ln = '='.repeat(W);
-  const g = (k, v) => padRight(k, W - String(v).length) + v;
+
+  // dua kolom terjepit di dalam W kolom (value rata kanan)
+  const row = (label, value) =>
+    trunc(label, Math.max(1, W - String(value).length)) +
+    ' '.repeat(Math.max(0, W - String(value).length - trunc(label, W - String(value).length).length)) +
+    value;
 
   const lines = [
-    '', ' ', '',
     '   ' + shop,
     '   STRUK KASIR',
     '',
-    (trx.noInvoice || ''),
-    (trx.platform || 'OFFLINE'),
-    (trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI'),
+    trx.noInvoice || '',
+    trx.platform || 'OFFLINE',
+    trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI',
     ...(trx.noMeja ? ['NO MEJA ' + String(trx.noMeja)] : []),
     ...(trx.namaPembeli ? ['PEMBELI ' + String(trx.namaPembeli).toUpperCase()] : []),
-    (trx.oleh ? 'OLEH ' + trx.oleh.toUpperCase() : '')
+    (trx.oleh ? 'OLEH ' + trx.oleh.toUpperCase() : ''),
+    ln,
   ];
+
   const body = [];
   (trx.items || []).forEach(it => {
-    body.push((it.nama || '').toUpperCase());
-    body.push(padRight('  ' + it.qty + ' x ' + rup(it.hargaJual), W) + rup(it.hargaJual * it.qty));
+    const nama = trunc((it.nama || '').toUpperCase(), W);
+    body.push(nama);
+    const sub = rup(it.hargaJual * it.qty);
+    const qtyLine = trunc('  ' + it.qty + ' x ' + rup(it.hargaJual), W - sub.length);
+    const paddedQty = qtyLine + ' '.repeat(Math.max(0, W - qtyLine.length - sub.length));
+    body.push(paddedQty + sub);
   });
+  body.push(ln);
 
-  const cols = 48;
-  const totalA = padRight('TOTAL', cols) + rup(total);
-  const bayarA = padRight('Dibayar', cols) + rup(bayar);
-  const kemA = kembalian >= 0 ? padRight('Kembalian', cols) + rup(kembalian) : padRight('KURANG', cols) + rup(-kembalian);
-
-  const rows = [ln, ...body, ln,
-    padRight('Subtotal', cols) + rup(trx.subtotal),
-    ...(Number(trx.diskon) ? [padRight('Diskon', cols) + '- ' + rup(trx.diskon)] : []),
-    ...(Number(trx.adjustment) ? [padRight('Penyesuaian', cols) + rup(trx.adjustment)] : []),
-    totalA, bayarA, kemA, ln,
-    'TERIMA KASIH', 'Sampai jumpa!'
-  ];
+  const rows = [];
+  rows.push(row('Subtotal', rup(trx.subtotal)));
+  if (Number(trx.diskon)) rows.push(row('Diskon', '- ' + rup(trx.diskon)));
+  if (Number(trx.adjustment)) rows.push(row('Penyesuaian', rup(trx.adjustment)));
+  rows.push(row('TOTAL', rup(total)));
+  rows.push(row('Dibayar', rup(bayar)));
+  rows.push(kembalian >= 0 ? row('Kembalian', rup(kembalian)) : row('KURANG', rup(-kembalian)));
+  rows.push(ln, 'TERIMA KASIH', 'Sampai jumpa!');
 
   const parts = [esc.init(), esc.center(), esc.boldOn()];
   lines.forEach(l => parts.push(esc.text(l)));
   parts.push(esc.boldOff(), esc.left());
+  body.forEach(b => parts.push(esc.text(b)));
   rows.forEach(r => parts.push(esc.text(r)));
   parts.push(esc.text(''), esc.feed(4), esc.cut());
   return concatBytes(parts);
-}
-
-let device = null;
-let txChar = null;
-
-const ms = n => new Promise(r => setTimeout(r, n));
-
-// Ambil device yang sudah dipilih (di-cache di localStorage)
-function getSavedDevice() {
-  const id = localStorage.getItem(STORAGE_DEVICE);
-  if (!id) return null;
-  try { return { id }; } catch (e) { return null; }
 }
 
 export function isBleSupported() {
   return typeof navigator !== 'undefined' && !!navigator.bluetooth;
 }
 
-export function isPrinterConnected() { return !!device; }
+export function isPrinterConnected() {
+  return !!device && !!device.gatt && !!server && !!server.connected;
+}
+
 export function getPrinterName() {
   return (device && device.name) || localStorage.getItem(STORAGE_DEVICE) || '';
 }
 
-// Konek ke printer BLE (memunculkan picker browser bila perlu)
-export async function connectPrinter() {
-  if (typeof navigator === 'undefined' || !navigator.bluetooth) {
-    throw new Error('Web Bluetooth tidak didukung di perangkat ini (butuh Android + Chrome).');
-  }
-  device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      '0000ffe0-0000-1000-8000-00805f9b34fb',
-      '000018f0-0000-1000-8000-00805f9b34fb',
-      '0000fee7-0000-1000-8000-00805f9b34fb',
-    ]
-  });
-  let server;
-  try {
-    server = await device.gatt.connect();
-  } catch (e) {
-    // fallback: beberapa printer expose service AIS/HM-10
-    server = await device.gatt.connect();
-  }
-  // naikkan MTU biar bisa kirim banyak byte dalam satu paket (Android)
-  try { if (server.requestMTU) await server.requestMTU(512); } catch (e) {}
-  await findTxCharacteristic(server);
-  try { localStorage.setItem(STORAGE_DEVICE, device.id); } catch (e) {}
-  device.ongattdisconnected = () => { device = null; };
-  return device.name || 'Printer';
+function getSavedDevice() {
+  const id = localStorage.getItem(STORAGE_DEVICE);
+  return id ? { id } : null;
 }
 
-// UUID umum untuk channel data printer thermal BT (UART/HM-10)
-const UUID_WRITE_PRIORITY = [
-  '0000ffe1-0000-1000-8000-00805f9b34fb', // FFE1 (HM-10 / banyak thermal)
-  '0000ffe2-0000-1000-8000-00805f9b34fb',
-  '49535343-8841-43f4-a8d4-ecbe34729bb3', // RedBear BLE Mini
-  '0000fff2-0000-1000-8000-00805f9b34fb',
-];
+function clearState() {
+  device = null;
+  server = null;
+  txChar = null;
+}
 
-async function findTxCharacteristic(server) {
+// Ambil karakteristik tulis dari service yang dikenal (RPP02N dulu).
+// Prioritas:
+//   1) service RPP02N 49535343-FE7D... -> char TX eksplisit
+//   2) fallback service umum (FFE0/FFE5/FEE7/18F0) -> char tulis pertama
+//   3) apapun yang writable
+async function findTxCharacteristic() {
+  // 1) RPP02N service eksplisit
+  try {
+    const svc = await server.getPrimaryService(RPP_HOST.serviceUUID);
+    log('info', 'Service RPP02N ditemukan:', RPP_HOST.serviceUUID);
+    const chars = await svc.getCharacteristics();
+    for (const c of chars) {
+      if (c.uuid.toLowerCase() === RPP_HOST.txWriteUUID) {
+        txChar = c;
+        log('info', 'TX char RPP02N ditetapkan:', c.uuid, 'props:', JSON.stringify(c.properties));
+        return txChar;
+      }
+    }
+    // char tulis dalam service itu (biar tetap jalan kalau UUID berubah antar-unit)
+    for (const c of chars) {
+      if (c.properties.writeWithoutResponse || c.properties.write) {
+        txChar = c;
+        log('warn', 'TX char eksplisit tak ketemu, pakai char tulis dalam service RPP02N:', c.uuid);
+        return txChar;
+      }
+    }
+  } catch (e) {
+    log('warn', 'Service RPP02N tidak terbaca:', e.message);
+  }
+
+  // 2) fallback service umum
   const svcs = await server.getPrimaryServices();
-  const candidates = [];
-
-  // 1) karakteristik tulis yang UUID-nya dikenali (pakai yang punya uuid)
   for (const svc of svcs) {
+    const su = svc.uuid.toLowerCase();
+    if (!UUID_FALLBACK_SERVICES.includes(su)) continue;
     let chars = [];
     try { chars = await svc.getCharacteristics(); } catch (e) { continue; }
     for (const c of chars) {
       if (c.properties.writeWithoutResponse || c.properties.write) {
-        if (UUID_WRITE_PRIORITY.includes(c.uuid.toLowerCase())) {
-          txChar = c; return c;
-        }
+        txChar = c;
+        log('warn', 'Fallback service dipakai:', su, '->', c.uuid);
+        return txChar;
       }
     }
   }
 
-  // 2) fallback: ambil SEMUA karakteristik tulis, prioritaskan yang punya properti
-  //    'write' (dengan respons) untuk data, lalu writeWithoutResponse.
+  // 3) apapun yang writable (paling tidak ideal, tapi berusaha)
   for (const svc of svcs) {
     let chars = [];
     try { chars = await svc.getCharacteristics(); } catch (e) { continue; }
-    for (const c of chars) {
-      if (c.properties.write) candidates.push({ c, w: 0 });
-      else if (c.properties.writeWithoutResponse) candidates.push({ c, w: 1 });
+    const writable = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
+    if (writable) {
+      txChar = writable;
+      log('warn', 'Arbitrary writable char dipakai (service tidak dikenal):', txChar.uuid);
+      return txChar;
     }
   }
-  candidates.sort((a, b) => a.w - b.w);
-  if (candidates.length) { txChar = candidates[0].c; return txChar; }
 
   throw new Error('Tidak menemukan karakteristik tulis di printer.');
 }
 
-export async function disconnectPrinter() {
-  if (device && device.gatt && device.gatt.connected) {
-    try { device.gatt.disconnect(); } catch (e) {}
+export async function connectPrinter() {
+  if (!isBleSupported()) {
+    throw new Error('Web Bluetooth tidak didukung di perangkat ini (butuh Android + Chrome).');
   }
-  device = null;
-  txChar = null;
-}
+  disconnectPrinter();
 
-// Kirim byte ke printer (dipecah per 20 byte — batas MTU BLE — dengan jeda)
-export async function printBytes(bytes) {
-  if (!device || !device.gatt || !device.gatt.connected) {
-    throw new Error('Printer belum terkoneksi.');
-  }
-  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const CHUNK = 20;
-  const DELAY = 40;
+  // requestDevice WAJIB minta service RPP02N supaya Chrome expose service itu.
+  const optionalServices = [RPP_HOST.serviceUUID, ...UUID_FALLBACK_SERVICES];
 
-  // coba pakai txChar yang tersimpan; kalau ada properti write, pakai itu
-  // karena beberapa printer menolak writeWithoutResponse untuk data.
-  const writeChunk = async (c, part) => {
-    if (c.properties.writeWithoutResponse) {
-      try { await c.writeValueWithoutResponse(part); return; } catch (e) { /* coba write */ }
-    }
-    if (c.properties.write) { await c.writeValue(part); return; }
-    throw new Error('Karakteristik tidak bisa ditulisi.');
+  device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices,
+  });
+  log('info', 'Device dipilih:', device.name, '| id:', device.id);
+
+  device.ongattdisconnected = () => {
+    log('warn', 'GATT disconnected');
+    clearState();
   };
 
-  if (txChar && (txChar.properties.write || txChar.properties.writeWithoutResponse)) {
-    for (let i = 0; i < arr.length; i += CHUNK) {
-      await writeChunk(txChar, arr.slice(i, i + CHUNK));
-      await ms(DELAY);
-    }
-    return;
+  server = await device.gatt.connect();
+  log('info', 'GATT connected. Service diminta:', optionalServices.length);
+
+  // MTU: Web Bluetooth tidak punya requestMTU standar. Jangan andalkan.
+  // Semua kirim memakai chunk kecil (20 B) yang pasti aman untuk MTU default.
+  if (server.requestMTU) {
+    log('warn', 'requestMTU ada di browser ini tapi TIDAK diandalkan; tetap chunk kecil.');
   }
 
-  // fallback: scan langsung
-  const svcs = await device.gatt.getPrimaryServices();
-  for (const svc of svcs) {
-    const chars = await svc.getCharacteristics().catch(() => []);
-    for (const c of chars) {
-      if (c.properties.writeWithoutResponse || c.properties.write) {
-        for (let i = 0; i < arr.length; i += CHUNK) {
-          await writeChunk(c, arr.slice(i, i + CHUNK));
-          await ms(DELAY);
-        }
-        return;
-      }
-    }
-  }
-  throw new Error('Tidak ada karakteristik tulis.');
+  await findTxCharacteristic();
+  try { localStorage.setItem(STORAGE_DEVICE, device.id); } catch (e) {}
+  log('info', 'Siap cetak. TX char:', txChar && txChar.uuid);
+  return device.name || 'Printer';
 }
 
-// Test print: baris sederhana
+export function disconnectPrinter() {
+  if (server && server.connected) {
+    try { server.disconnect(); } catch (e) {}
+  }
+  clearState();
+}
+
+async function writeChunk(c, part, idx) {
+  let mode = '';
+  if (c.properties.writeWithoutResponse) {
+    try {
+      await c.writeValueWithoutResponse(part);
+      mode = 'writeWithoutResponse';
+      log('debug', `chunk ${idx} OK (${part.byteLength}B) -> ${mode}`);
+      return;
+    } catch (e) {
+      log('warn', `chunk ${idx} writeWithoutResponse gagal, coba write():`, e.message);
+    }
+  }
+  if (c.properties.write) {
+    await c.writeValue(part);
+    mode = 'writeValue';
+    log('debug', `chunk ${idx} OK (${part.byteLength}B) -> ${mode}`);
+    return;
+  }
+  throw new Error('Karakteristik tidak bisa ditulisi.');
+}
+
+export async function printBytes(bytes) {
+  if (!isPrinterConnected() || !txChar) {
+    throw new Error('Printer belum terkoneksi (GATT tidak terhubung).');
+  }
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const CHUNK = 20;   // aman di MTU default (23).
+  const DELAY = 40;
+  const totalChunks = Math.ceil(arr.length / CHUNK);
+
+  log('info', `printBytes: ${arr.length} byte, ${totalChunks} chunk, chunk=${CHUNK}, delay=${DELAY}ms, tx=${txChar.uuid}`);
+
+  for (let i = 0, idx = 0; i < arr.length; i += CHUNK, idx++) {
+    const part = arr.slice(i, i + CHUNK);
+    await writeChunk(txChar, part, idx);
+    if (idx < totalChunks - 1) await ms(DELAY);
+  }
+  log('info', `Selesai kirim ${arr.length} byte dalam ${totalChunks} chunk.`);
+}
+
+// Test print sederhana (TANPA cutter) untuk diagnosa tahap awal.
 export async function testPrint() {
-  const bytes = concatBytes([
-    esc.init(), esc.center(), esc.boldOn(),
-    esc.text('PRINTER OK'), esc.text(new Date().toLocaleString('id-ID')),
-    esc.boldOff(), esc.text(''), esc.feed(3), esc.cut()
-  ]);
+  log('info', 'testPrint dipanggil');
+  const now = new Date();
+  const ts = now.toLocaleString('id-ID');
+  const text = [
+    '============================',
+    '        TEST RPP02N',
+    '============================',
+    'BLE CONNECTION OK',
+    'ESC/POS TEST',
+    '0123456789',
+    '============================',
+    '',
+    ts,
+  ];
+
+  const byteParts = [
+    esc.init(),
+    ...text.map(l => {
+      const bytes = new TextEncoder().encode(l + '\n');
+      return bytes;
+    }),
+    esc.feed(4),
+    // TIDAK pakai esc.cut() pada tes pertama.
+  ];
+  const bytes = concatBytes(byteParts);
   await printBytes(bytes);
 }
