@@ -173,9 +173,31 @@ function render() {
         <button class="${state.tab === 'lainnya' ? 'active' : ''}" data-tab="lainnya"><i class="fa fa-ellipsis"></i><span>Lainnya</span></button>
       </nav>
     </div>
-    ${state.tab === 'kasir' ? renderCartFab() : ''}
-    <div id="cart-drawer-container" style="display:none">${renderCartDrawer()}</div>
+    ${state.tab === 'kasir' ? renderTotalBar() + renderCartSheet() : ''}
   `;
+}
+
+function renderTotalBar() {
+  if (!state.cart.length) return '';
+  const { totalJual, diskon, grandTotal } = cartTotals();
+  const totalQty = state.cart.reduce((s, c) => s + c.qty, 0);
+  return `
+    <div class="total-bar active" data-open-cart>
+      <div class="tb-row">
+        <div class="tb-info">
+          <span class="tb-count">${totalQty} item</span>
+          <span class="tb-total">${rupiah(grandTotal)}</span>
+        </div>
+        <button class="tb-bayar" data-open-cart>Bayar</button>
+      </div>
+    </div>`;
+}
+
+function cartTotals() {
+  const totalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
+  const diskon = diskonTransaksi(totalJual);
+  const grandTotal = totalJual - diskon + Number(state.adjustment || 0);
+  return { totalJual, diskon, grandTotal };
 }
 
 function renderTabContent() {
@@ -251,14 +273,31 @@ function renderMenuGridItems() {
     const saran = m.hargaJualManual || hitungHargaSaran(hpp, m.marginPercent ?? settings.defaultMarginPercent, adminPercentFor(state.platform));
     const efektif = hargaJualEfektif(m, saran, saran);
     const adaDiskon = efektif < saran;
+    const qty = cartQty(m.id);
+    const stepper = qty > 0 ? `
+      <div class="mc-stepper" data-card-stepper="${m.id}">
+        <button class="mc-minus" data-mc-minus="${m.id}">−</button>
+        <span class="mc-q">${qty}</span>
+        <button class="mc-plus" data-mc-plus="${m.id}">+</button>
+      </div>` : `
+      <button class="mc-add" data-mc-add="${m.id}">+ Tambah</button>`;
     return `
-    <div class="menu-card" data-pick-menu="${m.id}">
-      ${m.gambar ? `<img src="${escapeAttr(m.gambar)}" class="mc-img">` : `<div class="mc-ph">☕</div>`}
-      ${adaDiskon ? `<span class="menu-card-badge">PROMO</span>` : ''}
-      <div class="mc-name">${escapeHtml(m.nama)}</div>
-      <div class="mc-price">${adaDiskon ? `<span class="coret">${rupiah(Math.round(saran))}</span> ${rupiah(Math.round(efektif))}` : rupiah(Math.round(efektif))}</div>
+    <div class="menu-card" data-card="${m.id}">
+      <div class="mc-body" data-icr="${m.id}">
+        ${m.gambar ? `<img src="${escapeAttr(m.gambar)}" class="mc-img">` : `<div class="mc-ph">☕</div>`}
+        ${adaDiskon ? `<span class="menu-card-badge">PROMO</span>` : ''}
+        <div class="mc-name">${escapeHtml(m.nama)}</div>
+        <div class="mc-price">${adaDiskon ? `<span class="coret">${rupiah(Math.round(saran))}</span> ${rupiah(Math.round(efektif))}` : rupiah(Math.round(efektif))}</div>
+      </div>
+      ${stepper}
     </div>`;
   }).join('');
+}
+
+function cartQty(menuId) {
+  const it = state.cart.find(c => c.menuId === menuId);
+  return it ? it.qty : 0;
+}
 }
 
 // ================= CART SIDEBAR (tablet) =================
@@ -298,9 +337,49 @@ function renderCartSidebarContent() {
     </div>`;
 }
 
-// ================= CART FAB (mobile) =================
-function renderCartFab() {
-  return `<button class="cart-fab ${state.cart.length ? 'has-items' : ''}" data-cart-toggle="open"><i class="fa fa-shopping-cart"></i>${state.cart.length ? `<span class="cart-count">${state.cart.length}</span>` : ''}</button>`;
+// ================= CART BOTTOM SHEET (small) =================
+function renderCartSheet() {
+  const openClass = state.sheetOpen === 'cart' ? ' show' : '';
+  return `
+    <div class="cs-overlay${openClass}" id="cs-overlay" data-close-cart></div>
+    <div class="cs-sheet${openClass}" id="cs-sheet">
+      <div class="cs-grip"></div>
+      <div class="cs-sheet-header"><span>Keranjang</span><button class="cs-sheet-close" data-close-cart>✕</button></div>
+      <div class="cs-sheet-items">${renderSheetItems()}</div>
+      <div class="cs-sheet-foot">${renderSheetFooter()}</div>
+    </div>`;
+}
+
+function renderSheetItems() {
+  if (!state.cart.length) return `<div class="empty" style="padding:24px;text-align:center">Keranjang kosong.</div>`;
+  return state.cart.map((c, i) => `
+    <div class="cd-item">
+      <div class="cs-name">${escapeHtml(c.nama)}<div class="cs-price">${rupiah(Math.round(c.hargaJual))} × ${c.qty} = ${rupiah(Math.round(c.hargaJual * c.qty))}</div></div>
+      <div class="cd-qty">
+        <button data-cart-dec="${i}">−</button><span>${c.qty}</span><button data-cart-inc="${i}">+</button>
+        <button data-cart-remove="${i}" class="ci-delete">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderSheetFooter() {
+  if (!state.cart.length) {
+    return `<button class="cs-sheet-bayar" data-close-cart style="opacity:.5">Keranjang Kosong</button>`;
+  }
+  const { totalJual, diskon, grandTotal } = cartTotals();
+  return `
+    <div class="cs-sheet-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
+    ${diskon ? `<div class="cs-sheet-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span></div>` : ''}
+    ${state.adjustment ? `<div class="cs-sheet-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
+    <div class="cs-sheet-row cs-sheet-total"><span>TOTAL</span><span>${rupiah(grandTotal)}</span></div>
+    <div class="cs-sheet-section"><label>Platform</label><div class="cs-sheet-prow">
+      ${getSettings().platforms.map(p => `<button class="btn btn-sm ${state.platform === p.nama ? 'btn-primary' : 'btn-ghost'}" data-set-platform="${p.nama}">${escapeHtml(p.nama)}</button>`).join('')}
+    </div></div>
+    <div class="cs-sheet-section"><label>Bayar</label><div class="cs-sheet-prow">
+      <button class="btn btn-sm ${state.metodeBayar === 'tunai' ? 'btn-primary' : 'btn-ghost'}" data-set-metode="tunai">Tunai</button>
+      <button class="btn btn-sm ${state.metodeBayar === 'qris' ? 'btn-primary' : 'btn-ghost'}" data-set-metode="qris">QRIS</button>
+    </div></div>
+    <button class="cs-sheet-bayar" data-checkout-btn>Bayar Sekarang</button>`;
 }
 
 // ================= TAB: RIWAYAT =================
@@ -439,38 +518,6 @@ function renderStokSubtab() {
     </div>`;
 }
 
-// ================= CART DRAWER (mobile) =================
-function renderCartDrawer() {
-  if (!state.cart.length) {
-    return `<div class="cashier-cart-overlay" data-cart-toggle="close"></div><div class="cashier-cart-drawer" id="cart-drawer"><div class="cd-header"><span>Keranjang</span><button class="cd-close" data-cart-toggle="close">✕</button></div><div class="cd-items"><div class="empty" style="padding:20px;text-align:center">Keranjang kosong.</div></div></div>`;
-  }
-  const totalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
-  const diskon = diskonTransaksi(totalJual);
-  const grandTotal = totalJual - diskon + Number(state.adjustment || 0);
-  const cartItems = state.cart.map((c, i) => `
-    <div class="cd-item"><div class="cd-name">${escapeHtml(c.nama)}<div class="cd-price">${rupiah(Math.round(c.hargaJual))} × ${c.qty} = ${rupiah(Math.round(c.hargaJual * c.qty))}</div></div>
-      <div class="cd-qty"><button data-cart-dec="${i}">−</button><span>${c.qty}</span><button data-cart-inc="${i}">+</button><button data-cart-remove="${i}" class="ci-delete">✕</button></div>
-    </div>`).join('');
-  return `
-    <div class="cashier-cart-overlay" data-cart-toggle="close"></div>
-    <div class="cashier-cart-drawer open" id="cart-drawer">
-      <div class="cd-header"><span>Keranjang</span><button class="cd-close" data-cart-toggle="close">✕</button></div>
-      <div class="cd-items">${cartItems}</div>
-      <div class="cd-footer">
-        <div class="cd-total"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
-        ${diskon ? `<div class="cd-total"><span>Diskon</span><span>−${rupiah(diskon)}</span></div>` : ''}
-        ${state.adjustment ? `<div class="cd-total"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
-        <div class="cd-total"><span style="font-size:16px">TOTAL</span><span>${rupiah(grandTotal)}</span></div>
-        <div style="margin-bottom:8px"><label>Platform</label><div class="cd-pay-row">${getSettings().platforms.map(p => `<button class="btn btn-sm ${state.platform === p.nama ? 'btn-primary' : 'btn-ghost'}" data-set-platform="${p.nama}">${escapeHtml(p.nama)}</button>`).join('')}</div></div>
-        <div style="margin-bottom:8px"><label>Bayar</label><div class="cd-pay-row">
-          <button class="btn btn-sm ${state.metodeBayar === 'tunai' ? 'btn-primary' : 'btn-ghost'}" data-set-metode="tunai">Tunai</button>
-          <button class="btn btn-sm ${state.metodeBayar === 'qris' ? 'btn-primary' : 'btn-ghost'}" data-set-metode="qris">QRIS</button>
-        </div></div>
-        <button class="cd-btn-bayar" data-checkout-btn>Selesaikan Transaksi</button>
-      </div>
-    </div>`;
-}
-
 // ================= CART ACTIONS =================
 function addToCartCashier(menuId) {
   const menu = getMenuList().find(m => m.id === menuId);
@@ -483,23 +530,66 @@ function addToCartCashier(menuId) {
   if (existing) { existing.qty += 1; }
   else { state.cart.push({ menuId, nama: menu.nama, qty: 1, hargaJual: Math.round(hargaJual), hargaNormal: Math.round(hargaNormal), hpp }); }
   renderCartRegion();
-  if (window.innerWidth < 900) toggleCartDrawer(true);
+}
+
+function removeOneFromCart(menuId) {
+  const idx = state.cart.findIndex(c => c.menuId === menuId);
+  if (idx < 0) return;
+  state.cart[idx].qty--;
+  if (state.cart[idx].qty <= 0) state.cart.splice(idx, 1);
+  renderCartRegion();
 }
 
 function renderCartRegion() {
+  const grid = document.getElementById('menu-grid');
+  if (grid) grid.innerHTML = renderMenuGridItems();
   const sidebar = document.getElementById('pos-cart-sidebar');
   if (sidebar) sidebar.innerHTML = renderCartSidebarContent();
-  const container = document.getElementById('cart-drawer-container');
-  if (container) container.innerHTML = renderCartDrawer();
+  refreshTotalBar();
+  refreshSheet();
 }
 
-function toggleCartDrawer(show) {
-  if (window.innerWidth >= 900) return;
-  const container = document.getElementById('cart-drawer-container');
-  if (container) {
-    container.innerHTML = renderCartDrawer();
-    container.style.display = show ? 'block' : 'none';
+function refreshTotalBar() {
+  if (!state.cart.length) {
+    const wrap = document.querySelector('.total-bar');
+    if (wrap) wrap.remove();
+    return;
   }
+  const wrap = document.querySelector('.total-bar');
+  const n = document.createElement('div');
+  n.innerHTML = renderTotalBar();
+  const nn = n.firstChild;
+  if (!wrap) {
+    if (nn) $app.appendChild(nn);
+    return;
+  }
+  if (nn) wrap.replaceWith(nn);
+}
+
+function refreshSheet() {
+  const sheet = document.getElementById('cs-sheet');
+  if (!sheet) return;
+  const items = sheet.querySelector('.cs-sheet-items');
+  const foot = sheet.querySelector('.cs-sheet-foot');
+  if (items) items.innerHTML = renderSheetItems();
+  if (foot) foot.innerHTML = renderSheetFooter();
+}
+
+function openCartSheet() {
+  state.sheetOpen = 'cart';
+  const ov = document.getElementById('cs-overlay');
+  const sh = document.getElementById('cs-sheet');
+  if (ov) ov.classList.add('show');
+  if (sh) sh.classList.add('show');
+  closePaymentOverlay();
+}
+
+function closeCartSheet() {
+  state.sheetOpen = null;
+  const ov = document.getElementById('cs-overlay');
+  const sh = document.getElementById('cs-sheet');
+  if (ov) ov.classList.remove('show');
+  if (sh) sh.classList.remove('show');
 }
 
 // ================= CHECKOUT =================
@@ -782,7 +872,7 @@ document.addEventListener('click', async (e) => {
 
   // Tab navigation
   const tabBtn = t.closest('[data-tab]');
-  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.subtab = null; closeSheet(); closePaymentOverlay(); render(); return; }
+  if (tabBtn) { state.tab = tabBtn.dataset.tab; state.subtab = null; closeSheet(); closePaymentOverlay(); closeCartSheet(); render(); return; }
 
   // Close overlays
   if (t.closest('[data-close-sheet]')) { closeSheet(); return; }
@@ -804,9 +894,16 @@ document.addEventListener('click', async (e) => {
   // Logout
   if (t.dataset.logout !== undefined) { handleLogout(); return; }
 
-  // Cart — add menu
-  const pick = t.closest('[data-pick-menu]');
-  if (pick) { addToCartCashier(pick.dataset.pickMenu); return; }
+  // Cart — open / close bottom sheet
+  if (t.dataset.openCart !== undefined) { openCartSheet(); return; }
+  if (t.dataset.closeCart !== undefined) { closeCartSheet(); return; }
+
+  // Menu card — add / stepper (stop propagation from stepper buttons)
+  if (t.dataset.mcAdd !== undefined) { addToCartCashier(t.dataset.mcAdd); return; }
+  if (t.dataset.mcPlus !== undefined) { addToCartCashier(t.dataset.mcPlus); return; }
+  if (t.dataset.mcMinus !== undefined) { removeOneFromCart(t.dataset.mcMinus); return; }
+  const body = t.closest('[data-icr]');
+  if (body) { addToCartCashier(body.dataset.icr); return; }
 
   // Cart — inc / dec / remove
   if (t.dataset.cartInc !== undefined) { state.cart[+t.dataset.cartInc].qty++; renderCartRegion(); return; }
@@ -821,12 +918,8 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.setPlatform) { state.platform = t.dataset.setPlatform; renderCartRegion(); return; }
   if (t.dataset.setMetode) { state.metodeBayar = t.dataset.setMetode; renderCartRegion(); return; }
 
-  // Cart drawer toggle (mobile)
-  if (t.dataset.cartToggle === 'open') { toggleCartDrawer(true); return; }
-  if (t.dataset.cartToggle === 'close') { const c = document.getElementById('cart-drawer-container'); if (c) c.style.display = 'none'; return; }
-
   // Checkout
-  if (t.dataset.checkoutBtn !== undefined) return checkoutCashier();
+  if (t.dataset.checkoutBtn !== undefined) { closeCartSheet(); return checkoutCashier(); }
 
   // Numeric Keypad
   if (t.dataset.num !== undefined) {
