@@ -94,14 +94,10 @@ function getSettings() {
 function getMenuList() { return CashierStore.get('Menu'); }
 function getBahanList() { return CashierStore.get('Bahan'); }
 function getPromoAktif() {
-  const now = new Date();
-  const d = now.toISOString().split('T')[0];
-  return CashierStore.get('Promo').filter(p => {
-    if (p.aktif === false) return false;
-    if (p.tglMulai && d < p.tglMulai) return false;
-    if (p.tglSelesai && d > p.tglSelesai) return false;
-    return true;
-  }).sort((a, b) => {
+  const t = todayStr();
+  return CashierStore.get('Promo').filter(p => p.aktif !== false
+    && (!p.tglMulai || p.tglMulai <= t) && (!p.tglSelesai || t <= p.tglSelesai)
+  ).sort((a, b) => {
     const na = a.jenis === 'persen' ? Number(a.nilai) : 0;
     const nb = b.jenis === 'persen' ? Number(b.nilai) : 0;
     return nb - na;
@@ -263,13 +259,17 @@ function renderPromoBanner() {
   const txPromos = getPromoAktif().filter(p => p.tipe === 'transaksi');
   const menuPromos = getPromoAktif().filter(p => p.tipe === 'menu');
   if (!txPromos.length && !menuPromos.length) return '';
-  const items = [];
-  if (txPromos.length) items.push('Diskon otomatis untuk semua item');
-  if (menuPromos.length) items.push('Promo harga menu tertentu');
+  const fmt = p => p.jenis === 'persen' ? p.nilai + '%' : rupiah(Number(p.nilai));
+  const chips = [];
+  txPromos.forEach(p => chips.push('Diskon transaksi ' + fmt(p)));
+  menuPromos.forEach(p => {
+    const nm = (p.menuId && getMenuList().find(m => m.id === p.menuId) || {}).nama || 'menu tertentu';
+    chips.push(nm + ' ' + fmt(p));
+  });
   return `
     <div class="promo-banner">
       <div class="pb-title"><i class="fa fa-tag"></i> Promo Aktif</div>
-      <div class="pb-list">${items.map(x => `<span class="pb-chip">${x}</span>`).join('')}</div>
+      <div class="pb-list">${chips.map(x => `<span class="pb-chip">${x}</span>`).join('')}</div>
     </div>`;
 }
 
