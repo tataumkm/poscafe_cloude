@@ -221,12 +221,39 @@ function filterByPeriode(list, tanggalField, periode) {
 }
 
 // ============ RENDER SHELL ============
+function captureFormState() {
+  const active = document.activeElement;
+  const snap = { activeTag: null, activeId: null, vals: [] };
+  if (active && active.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) {
+    snap.activeTag = active.tagName;
+    snap.activeId = active.id || null;
+  }
+  document.querySelectorAll('input, select, textarea').forEach(el => {
+    if (!el.id) return;
+    snap.vals.push([el.tagName + '#' + el.id, el.value]);
+  });
+  return snap;
+}
+function restoreFormState(snap) {
+  if (!snap) return;
+  snap.vals.forEach(([sel, val]) => {
+    const el = document.querySelector(sel);
+    if (el && document.activeElement !== el) el.value = val;
+  });
+  if (snap.activeId) {
+    const el = document.querySelector(snap.activeTag + '#' + snap.activeId);
+    if (el) { try { el.focus(); } catch (e) {} }
+  }
+}
+
 function render() {
+  const snap = captureFormState();
   $app.innerHTML = `
     ${renderTopbar()}
     <div class="page" id="page-content">${renderPage()}</div>
     ${renderBottomNav()}
   `;
+  restoreFormState(snap);
 }
 
 function renderTopbar() {
