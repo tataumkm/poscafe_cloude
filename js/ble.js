@@ -191,10 +191,6 @@ export async function printBytes(bytes) {
   if (!device || !device.gatt || !device.gatt.connected) {
     throw new Error('Printer belum terkoneksi.');
   }
-  // pastikan tahu karakteristik tulis (simpan dari connect)
-  if (!txChar) {
-    await findTxCharacteristic(await device.gatt.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb').catch(() => null));
-  }
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const CHUNK = 20;
   const DELAY = 40;

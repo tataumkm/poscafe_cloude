@@ -774,8 +774,8 @@ function openQrisConfirmPanel(trx) {
 
 // ================= RECEIPT PRINTING =================
 function printReceipt(trx, bayar) {
-  const pref = getPrintPref();
-  if (pref.mode === 'ble' && isBleSupported() && isPrinterConnected()) printBle(trx, bayar);
+  // kalau printer BLE sudah terkoneksi, cetak ke sana langsung
+  if (isBleSupported() && isPrinterConnected()) printBle(trx, bayar);
   else printDialogCashier(trx, bayar);
 }
 
