@@ -901,9 +901,9 @@ input:checked + .slider::before { transform: translateX(22px); }
   .pos-body { height: calc(100vh - var(--header-h) - var(--nav-h)); }
 }
 
-/* ═══ VERY SMALL (HP) ═══ */
-@media (max-width: 480px) {
-  .cashier-menu-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+/* ═══ VERY SMALL (HP sempit) ═══ */
+@media (max-width: 339px) {
+  .cashier-menu-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .menu-card { min-height: 118px; }
   .mc-stepper button { width: 28px; height: 28px; }
   .tb-total { font-size: 18px; }

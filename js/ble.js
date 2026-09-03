@@ -119,11 +119,17 @@ export function buildEscPos(trx, bayar) {
     THIN,
   ];
 
-  // body item: 2 baris/item — baris 1 nama (kiri), baris 2 qty (kiri)+subtotal (kanan)
+  // body item: 1 baris/item, minimalis.
+  // Format:  [nama................] [qtyxHarga]  [Subtotal]
+  // Kanan (qtyxharga + subtotal) rata kanan; nama di kiri dipotong.
   const body = [];
   (trx.items || []).forEach(it => {
-    body.push(trunc((it.nama || '').toUpperCase(), W));
-    body.push(row('  ' + it.qty + ' x ' + rup(it.hargaJual), rup(it.hargaJual * it.qty)));
+    const qtyline = String(it.qty) + 'x' + rup(it.hargaJual);
+    const sub = rup(it.hargaJual * it.qty);
+    const rightBlock = qtyline + ' ' + sub;                 // ukuran kanan
+    const nameMax = Math.max(1, W - rightBlock.length - 1);
+    const name = trunc((it.nama || '').toUpperCase(), nameMax);
+    body.push(name + ' '.repeat(Math.max(0, W - name.length - rightBlock.length)) + rightBlock);
   });
   body.push(SOLID);
 

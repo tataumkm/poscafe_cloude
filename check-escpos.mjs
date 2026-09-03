@@ -25,8 +25,10 @@ const bytes = buildEscPos(trx, 100000);
 let txt = '';
 for (let i = 0; i < bytes.length; i++) {
   const code = bytes[i];
-  if (code === 0x0A) txt += '\n';
-  else if (code >= 0x20) txt += String.fromCharCode(code);
+  if (code === 0x0A) { txt += '\n'; continue; }
+  if (code === 0x1B) { i += 2; continue; }        // ESC + 2 byte parameter
+  if (code === 0x1D) { i += 3; continue; }        // GS + 3 byte parameter
+  if (code >= 0x20 && code <= 0x7E) txt += String.fromCharCode(code);
 }
 
 const lines = txt.split('\n').filter(l => l.length > 0);
