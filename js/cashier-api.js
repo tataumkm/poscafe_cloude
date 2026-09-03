@@ -43,7 +43,7 @@ async function postJson(payload) {
   const json = await res.json();
   console.log('[DEBUG api] POST response:', json);
   if (json.error) throw new Error(json.error);
-  return json.result;
+  return json.result || json;
 }
 
 export const CashierApi = {
