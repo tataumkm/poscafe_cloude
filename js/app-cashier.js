@@ -464,6 +464,7 @@ function renderSheetFooter() {
   }
   const { totalJual, diskon, grandTotal } = cartTotals();
   return `
+    <div class="cs-sheet-section">${renderCustomerFields('sh')}</div>
     <div class="cs-sheet-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
     ${diskon ? `<div class="cs-sheet-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span></div>` : ''}
     ${state.adjustment ? `<div class="cs-sheet-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}

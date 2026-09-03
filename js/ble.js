@@ -90,6 +90,8 @@ export function buildEscPos(trx, bayar) {
 
 let device = null;
 
+const ms = n => new Promise(r => setTimeout(r, n));
+
 // Ambil device yang sudah dipilih (di-cache di localStorage)
 function getSavedDevice() {
   const id = localStorage.getItem(STORAGE_DEVICE);
@@ -126,6 +128,8 @@ export async function connectPrinter() {
     // fallback: beberapa printer expose service AIS/HM-10
     server = await device.gatt.connect();
   }
+  // naikkan MTU biar bisa kirim banyak byte dalam satu paket (Android)
+  try { if (server.requestMTU) await server.requestMTU(512); } catch (e) {}
   await findTxCharacteristic(server);
   try { localStorage.setItem(STORAGE_DEVICE, device.id); } catch (e) {}
   device.ongattdisconnected = () => { device = null; };
@@ -158,17 +162,31 @@ export async function disconnectPrinter() {
   device = null;
 }
 
-// Kirim byte ke printer
+// Kirim byte ke printer (dipecah per 20 byte — batas MTU BLE — dengan jeda,
+// supaya printer thermal BT tidak men-dump data hingga hilang)
 export async function printBytes(bytes) {
   if (!device || !device.gatt || !device.gatt.connected) {
     throw new Error('Printer belum terkoneksi.');
   }
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const CHUNK = 20;
+  const DELAY = 40;
+
   const svcs = await device.gatt.getPrimaryServices();
   for (const svc of svcs) {
     const chars = await svc.getCharacteristics();
     for (const c of chars) {
-      if (c.properties.writeWithoutResponse) { await c.writeValueWithoutResponse(bytes); return; }
-      if (c.properties.write) { await c.writeValue(bytes); return; }
+      const canWriteNR = c.properties.writeWithoutResponse;
+      const canWrite = c.properties.write;
+      if (canWriteNR || canWrite) {
+        for (let i = 0; i < arr.length; i += CHUNK) {
+          const part = arr.slice(i, i + CHUNK);
+          if (canWriteNR) await c.writeValueWithoutResponse(part);
+          else await c.writeValue(part);
+          await ms(DELAY);
+        }
+        return;
+      }
     }
   }
   throw new Error('Tidak ada karakteristik tulis.');
