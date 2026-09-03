@@ -32,6 +32,8 @@ const state = {
   noMeja: '',
   namaPembeli: '',
   loggingIn: false,
+  draftSaldoAwal: '',
+  draftSaldoAkhir: '',
 };
 
 const $app = document.getElementById('app');
@@ -264,7 +266,9 @@ function renderLogin() {
         <input id="cl-pin" type="password" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off" readonly />
       </div>
       <div class="cl-keypad">
-        ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="pin-key" data-pin-key="${n}">${n}</button>`).join('')}
+        ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="pin-key" data-pin-key="${n}">${n}</button>`).join('')}
+        <button class="pin-key pin-clear" data-pin-clear>C</button>
+        <button class="pin-key" data-pin-key="0">0</button>
         <button class="pin-key pin-del" data-pin-del><i class="fa fa-backspace"></i></button>
       </div>
       <button class="cl-btn" data-login-btn>Masuk</button>
@@ -273,14 +277,20 @@ function renderLogin() {
 }
 
 // ================= TAB: KASIR — SPLIT VIEW =================
+// POS ini single-shift per hari: begitu ada record Kas (buka ATAU tutup)
+// di tanggal itu, sesi dianggap sudah dipakai — jangan minta buka lagi.
+function adaKasHariIni() {
+  const today = todayStr();
+  return CashierStore.get('Kas').filter(k => k.tanggal === today).length > 0;
+}
+
 function cariSesiBukaHariIni() {
   const today = todayStr();
   const kas = CashierStore.get('Kas').filter(k => k.tanggal === today);
-  // kalau sudah ada record tutup hari ini, sesi dianggap sudah ditutup
-  if (kas.some(k => k.sesi === 'tutup')) return null;
   const r = kas.find(k => k.sesi === 'buka');
+  if (kas.some(k => k.sesi === 'tutup')) return null; // sudah tutup -> sudah dipakai
   if (!r) return null;
-  return { id: r.id, saldoAwal: r.saldoAwal, waktuBuka: r.waktu, oleh: r.oleh, tanggal: r.tanggal };
+  return { id: r.id, saldoAwal: r.saldoAwal, waktuBuka: r.waktu, oleh: r.oleh, tanggal: r.tanggal, closed: false };
 }
 
 function loadSesiFromStore() {
@@ -291,12 +301,13 @@ function loadSesiFromStore() {
 function renderKasirSplit() {
   loadSesiFromStore();
   if (!state.sesiKas) {
+    const sudah = adaKasHariIni();
     return `
       <div class="sesi-gate">
         <div class="sg-icon"><i class="fa fa-cash-register"></i></div>
-        <div class="sg-title">Belum Melakukan Open Sesi</div>
-        <div class="sg-sub">Silakan buka sesi kas terlebih dahulu untuk mulai menjual.</div>
-        <button class="btn btn-primary" data-open-sesi-gate>Buka Sesi Kas</button>
+        <div class="sg-title">${sudah ? 'Sesi Kas Hari Ini Selesai' : 'Belum Melakukan Open Sesi'}</div>
+        <div class="sg-sub">${sudah ? 'Sesi kas untuk hari ini sudah ditutup. Single shift per hari.' : 'Silakan buka sesi kas terlebih dahulu untuk mulai menjual.'}</div>
+        ${sudah ? '' : `<button class="btn btn-primary" data-open-sesi-gate>Buka Sesi Kas</button>`}
       </div>`;
   }
   return `
@@ -388,7 +399,7 @@ function renderCustomerFields(prefix) {
   return `
     <div class="cs-cust-row">
       <label>No. Meja / Antrian</label>
-      <input type="text" id="${idMeja}" inputmode="text" placeholder="mis. 12" value="${escapeAttr(state.noMeja)}" autocomplete="off" />
+      <input type="text" id="${idMeja}" inputmode="numeric" pattern="[0-9]*" placeholder="mis. 12" value="${escapeAttr(state.noMeja)}" autocomplete="off" />
     </div>
     <div class="cs-cust-row">
       <label>Nama Pembeli</label>
@@ -548,22 +559,43 @@ function renderSesiSubtab() {
     const today = todayStr();
     state.sesiKas = cariSesiBukaHariIni();
     if (state.sesiKas) return renderSesiOpen();
+    if (adaKasHariIni()) {
+      // sesi sudah dipakai (ditutup) hari ini -> jangan tampilkan form buka
+      return `
+        <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
+          <div class="subtab-header"><button class="subtab-back" data-lainnya-back><i class="fa fa-arrow-left"></i></button><h2>Sesi Kas</h2></div>
+          <div class="sesi-gate" style="padding:32px 24px">
+            <div class="sg-icon"><i class="fa fa-check-circle"></i></div>
+            <div class="sg-title">Sesi Kas Hari Ini Selesai</div>
+            <div class="sg-sub">Sesi untuk ${today} sudah ditutup. Single shift per hari — tidak bisa buka lagi.</div>
+          </div>
+        </div>`;
+    }
+    const draft = state.draftSaldoAwal || '';
     return `
       <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
         <div class="subtab-header"><button class="subtab-back" data-lainnya-back><i class="fa fa-arrow-left"></i></button><h2>Sesi Kas</h2></div>
-        <div class="sesi-kas-card">
+        <div class="sesi-kas-card sesi-compact">
           <div class="sk-row"><span class="k">Tanggal</span><span class="v">${today}</span></div>
           <div class="sk-row"><span class="k">Kasir</span><span class="v">${escapeHtml(CashierAuth.getUser()?.nama || '')}</span></div>
-          <div class="num-input-wrap"><label>Saldo Awal Kas (Rp)</label><input type="text" id="sk-saldo-awal" inputmode="numeric" placeholder="mis. 100000" autocomplete="off" readonly /></div>
-          <div class="num-keypad" data-target="sk-saldo-awal">
-            ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
-            <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
-          </div>
-          <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-buka>Buka Sesi Kas</button>
+          <div class="num-input-wrap"><label>Saldo Awal Kas (Rp)</label><input type="text" id="sk-saldo-awal" inputmode="numeric" placeholder="mis. 100000" value="${escapeAttr(draft)}" autocomplete="off" readonly /></div>
+          ${renderNumKeypad('sk-saldo-awal')}
+          <button class="btn btn-primary" style="width:100%;margin-top:10px" data-sesi-buka>Buka Sesi Kas</button>
         </div>
       </div>`;
   }
   return renderSesiOpen();
+}
+
+// numpad kompak (kecil, muat 1 layar). Tombol bawah: C | 0 | DEL
+function renderNumKeypad(target) {
+  return `
+    <div class="num-keypad num-keypad-compact" data-target="${target}">
+      ${[1,2,3,4,5,6,7,8,9].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
+      <button class="num-key num-clear" data-num-clear>C</button>
+      <button class="num-key" data-num="0">0</button>
+      <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
+    </div>`;
 }
 
 function renderSesiOpen() {
@@ -574,24 +606,21 @@ function renderSesiOpen() {
   const totalTunai = tunaiTransaksi.reduce((sum, p) => sum + Number(p.total || 0), 0);
   const saldoAwal = Number(s.saldoAwal || 0);
   const harusnya = saldoAwal + totalTunai;
+  const draftAkhir = state.draftSaldoAkhir || String(harusnya);
   return `
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
       <div class="subtab-header"><button class="subtab-back" data-lainnya-back><i class="fa fa-arrow-left"></i></button><h2>Sesi Kas</h2></div>
-      <div class="sesi-kas-card">
-        <div class="sk-row"><span class="k">Tanggal</span><span class="v">${today}</span></div>
+      <div class="sesi-kas-card sesi-compact">
         <div class="sk-row"><span class="k">Kasir</span><span class="v">${escapeHtml(s.oleh || '')}</span></div>
-        <div class="sk-row"><span class="k">Waktu Buka</span><span class="v">${s.waktuBuka || '-'}</span></div>
+        <div class="sk-row"><span class="k">Tanggal / Buka</span><span class="v">${s.waktuBuka || '-'}</span></div>
         <div class="sk-row"><span class="k">Saldo Awal</span><span class="v">${rupiah(saldoAwal)}</span></div>
         <div class="sk-row"><span class="k">Transaksi Tunai</span><span class="v">${tunaiTransaksi.length} ×</span></div>
         <div class="sk-row"><span class="k">Total Tunai Masuk</span><span class="v">${rupiah(totalTunai)}</span></div>
         <div class="sk-total"><span>Total Kas (teori)</span><span>${rupiah(harusnya)}</span></div>
-        <div class="num-input-wrap"><label>Uang di Kotak Sekarang (Rp)</label><input type="text" id="sk-saldo-akhir" inputmode="numeric" placeholder="mis. ${harusnya.toLocaleString('id-ID')}" value="${harusnya}" autocomplete="off" readonly /></div>
-        <div class="num-keypad" data-target="sk-saldo-akhir">
-          ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
-          <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
-        </div>
-        <div class="sk-row" style="margin-top:8px"><span class="k">Selisih</span><span class="v" id="sk-selisih">${rupiah(0)}</span></div>
-        <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-tutup>Tutup Sesi & Cetak Laporan</button>
+        <div class="num-input-wrap"><label>Uang di Kotak Sekarang (Rp)</label><input type="text" id="sk-saldo-akhir" inputmode="numeric" value="${escapeAttr(draftAkhir)}" autocomplete="off" readonly /></div>
+        ${renderNumKeypad('sk-saldo-akhir')}
+        <div class="sk-row"><span class="k">Selisih</span><span class="v" id="sk-selisih">${rupiah(0)}</span></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:10px" data-sesi-tutup>Tutup Sesi & Cetak Laporan</button>
       </div>
     </div>`;
 }
@@ -844,6 +873,8 @@ async function openSesiKas() {
   const trx = { id: uid(), sesi: 'buka', tanggal: todayStr(), waktu: nowTimeStr(), saldoAwal, oleh: user?.nama || '', totalTunai: 0, totalTransaksi: 0, catatan: '' };
   await CashierStore.insert('Kas', trx);
   state.sesiKas = { id: trx.id, saldoAwal, waktuBuka: trx.waktu, oleh: trx.oleh, tanggal: trx.tanggal };
+  state.draftSaldoAwal = '';
+  state.draftSaldoAkhir = '';
   closeSheet();
   toast('Sesi kas dibuka ✓');
   state.tab = 'kasir';
@@ -864,6 +895,14 @@ function updateSelisih() {
   if (el) { el.textContent = rupiah(selisih); el.className = 'v ' + (selisih >= 0 ? 'positive' : 'negative'); }
 }
 
+// simpan input numpad ke state supaya tidak hilang saat render ulang
+function persistSesiDraft() {
+  const a = document.getElementById('sk-saldo-awal');
+  const b = document.getElementById('sk-saldo-akhir');
+  if (a) state.draftSaldoAwal = a.value;
+  if (b) state.draftSaldoAkhir = b.value;
+}
+
 async function tutupSesiKas() {
   const s = state.sesiKas;
   if (!s) return;
@@ -880,6 +919,8 @@ async function tutupSesiKas() {
   await CashierStore._flush();
   const laporanHtml = renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi, selisih);
   state.sesiKas = null;
+  state.draftSaldoAwal = '';
+  state.draftSaldoAkhir = '';
   closeSheet();
   toast('Sesi kas ditutup ✓');
   const html = `<div class="sheet-handle"></div><div class="sheet-head"><h2>Laporan Kasier Hari Ini</h2><button class="btn-icon" data-close-sheet>✕</button></div>
@@ -991,6 +1032,11 @@ document.addEventListener('click', async (e) => {
     if (pinEl) pinEl.value = pinEl.value.slice(0, -1);
     return;
   }
+  if (t.dataset.pinClear !== undefined) {
+    const pinEl = document.getElementById('cl-pin');
+    if (pinEl) pinEl.value = '';
+    return;
+  }
 
   // Logout
   if (t.dataset.logout !== undefined) { handleLogout(); return; }
@@ -1022,13 +1068,36 @@ document.addEventListener('click', async (e) => {
   // Checkout
   if (t.dataset.checkoutBtn !== undefined) { closeCartSheet(); return checkoutCashier(); }
 
-  // Numeric Keypad
+  // Numeric Keypad (sesi kas)
+  const kpTarget = t.closest && t.closest('.num-keypad') ? t.closest('.num-keypad').dataset.target : null;
+  if (kpTarget) {
+    const el = document.getElementById(kpTarget);
+    if (t.dataset.num !== undefined && el) {
+      if (el.value.length < 16) el.value += t.dataset.num;
+      persistSesiDraft();
+      if (kpTarget === 'sk-saldo-akhir') updateSelisih();
+      return;
+    }
+    if (t.dataset.numDel !== undefined && el) {
+      el.value = el.value.slice(0, -1);
+      persistSesiDraft();
+      if (kpTarget === 'sk-saldo-akhir') updateSelisih();
+      return;
+    }
+    if (t.dataset.numClear !== undefined && el) {
+      el.value = '';
+      persistSesiDraft();
+      if (kpTarget === 'sk-saldo-akhir') updateSelisih();
+      return;
+    }
+  }
+  // fallback lama (keypad tanpa data-target)
   if (t.dataset.num !== undefined) {
     const targetEl = document.getElementById('sk-saldo-awal');
     const targetEl2 = document.getElementById('sk-saldo-akhir');
     const val = t.dataset.num;
-    if (targetEl && targetEl.readOnly) { if (targetEl.value.length < 16) targetEl.value += val; }
-    else if (targetEl2 && targetEl2.readOnly) { if (targetEl2.value.length < 16) targetEl2.value += val; updateSelisih(); }
+    if (targetEl && targetEl.readOnly) { if (targetEl.value.length < 16) targetEl.value += val; persistSesiDraft(); }
+    else if (targetEl2 && targetEl2.readOnly) { if (targetEl2.value.length < 16) targetEl2.value += val; persistSesiDraft(); updateSelisih(); }
     return;
   }
   if (t.dataset.numDel !== undefined) {
@@ -1036,6 +1105,16 @@ document.addEventListener('click', async (e) => {
     const targetEl2 = document.getElementById('sk-saldo-akhir');
     if (targetEl && targetEl.value) targetEl.value = targetEl.value.slice(0, -1);
     if (targetEl2 && targetEl2.value) targetEl2.value = targetEl2.value.slice(0, -1);
+    persistSesiDraft();
+    if (targetEl2) updateSelisih();
+    return;
+  }
+  if (t.dataset.numClear !== undefined) {
+    const targetEl = document.getElementById('sk-saldo-awal');
+    const targetEl2 = document.getElementById('sk-saldo-akhir');
+    if (targetEl) targetEl.value = '';
+    if (targetEl2) targetEl2.value = '';
+    persistSesiDraft();
     if (targetEl2) updateSelisih();
     return;
   }
