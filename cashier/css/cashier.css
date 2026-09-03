@@ -229,37 +229,38 @@ html { scrollbar-width: none; }
 .cashier-menu-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px; padding-bottom: 16px;
+  gap: 6px; padding-bottom: 16px;
 }
 .menu-card {
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: 12px; text-align: center;
+  border-radius: 10px; text-align: center;
   cursor: pointer; position: relative; overflow: hidden;
   transition: all .1s; box-shadow: var(--shadow-sm);
-  display: flex; flex-direction: column; min-height: 112px;
-  padding: 0 0 8px;
+  display: flex; flex-direction: column; min-height: 96px;
+  padding: 0 0 6px;
 }
 .menu-card:active { box-shadow: var(--shadow-md); }
 .menu-card .mc-body {
-  padding: 8px 6px 4px; flex: 1;
+  padding: 6px 4px 3px; flex: 1;
   display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-start;
 }
 .menu-card .mc-img {
-  width: 48px; height: 48px; object-fit: cover; border-radius: 10px;
-  margin: 0 auto 4px; background: var(--bg);
+  width: 40px; height: 40px; object-fit: cover; border-radius: 8px;
+  margin: 0 auto 3px; background: var(--bg);
 }
 .menu-card .mc-ph {
-  width: 48px; height: 48px; margin: 0 auto 4px;
-  border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  font-size: 22px; background: var(--bg); color: var(--ink-dim);
+  width: 40px; height: 40px; margin: 0 auto 3px;
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; background: var(--bg); color: var(--ink-dim);
 }
 .menu-card .mc-name {
-  font-size: 11px; font-weight: 600; color: var(--ink); width: 100%;
+  font-size: 10px; font-weight: 600; color: var(--ink); width: 100%;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  line-height: 1.25;
+  line-height: 1.2; word-break: break-word;
 }
 .menu-card .mc-price {
-  font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 2px;
+  font-size: 11px; font-weight: 700; color: var(--accent); margin-top: 2px;
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   width: 100%;
 }
