@@ -190,6 +190,7 @@ function renderTotalBar() {
         </div>
         <button class="tb-bayar" data-open-cart>Bayar</button>
       </div>
+      ${diskon ? `<div class="tb-diskon"><i class="fa fa-tag"></i> Diskon ${rupiah(diskon)}</div>` : ''}
     </div>`;
 }
 
@@ -244,6 +245,7 @@ function renderKasirSplit() {
           <input type="search" id="menu-search" placeholder="Cari menu..." value="${escapeAttr(state.menuSearch || '')}" />
         </div>
         <div class="category-chips">${renderCategoryChips()}</div>
+        ${renderPromoBanner()}
         <div class="cashier-menu-grid" id="menu-grid">${renderMenuGridItems()}</div>
       </div>
       <div class="pos-cart-panel" id="pos-cart-sidebar">${renderCartSidebarContent()}</div>
@@ -255,6 +257,20 @@ function renderCategoryChips() {
   const menus = getMenuList().filter(m => m.aktif !== false);
   const kategoris = ['Semua', ...new Set(menus.map(m => m.kategori).filter(Boolean))];
   return kategoris.map(k => `<button class="category-chip ${state.kategoriFilter === k ? 'active' : ''}" data-kategori="${k}">${escapeHtml(k)}</button>`).join('');
+}
+
+function renderPromoBanner() {
+  const txPromos = getPromoAktif().filter(p => p.tipe === 'transaksi');
+  const menuPromos = getPromoAktif().filter(p => p.tipe === 'menu');
+  if (!txPromos.length && !menuPromos.length) return '';
+  const items = [];
+  if (txPromos.length) items.push('Diskon otomatis untuk semua item');
+  if (menuPromos.length) items.push('Promo harga menu tertentu');
+  return `
+    <div class="promo-banner">
+      <div class="pb-title"><i class="fa fa-tag"></i> Promo Aktif</div>
+      <div class="pb-list">${items.map(x => `<span class="pb-chip">${x}</span>`).join('')}</div>
+    </div>`;
 }
 
 function renderMenuGridItems() {
