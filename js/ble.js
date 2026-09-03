@@ -29,7 +29,7 @@ const esc = {
 // Konfigurasi printer RPP02N (dari hasil nRF Connect)
 // ------------------------------------------------------------------
 const RPP_HOST = {
-  serviceUUID: '49535343-fe7d-4ae5-8fa9-9afd205e455',
+  serviceUUID: '49535343-fe7d-4ae5-8fa9-9fafd205e455',
   txWriteUUID: '49535343-8841-43f4-a8d4-ecbe34729bb3', // WRITE + WRITE_NO_RESPONSE
 };
 
