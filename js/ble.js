@@ -19,6 +19,8 @@ const esc = {
   left: () => new Uint8Array([0x1B, 0x61, 0x00]),
   boldOn: () => new Uint8Array([0x1B, 0x45, 0x01]),
   boldOff: () => new Uint8Array([0x1B, 0x45, 0x00]),
+  fontB: () => new Uint8Array([0x1B, 0x4D, 0x01]), // condensed 9x17 -> 48 kolom/48mm
+  fontA: () => new Uint8Array([0x1B, 0x4D, 0x00]),
   feed: (n = 3) => new Uint8Array([0x1B, 0x64, n]),
   cut: () => new Uint8Array([0x1D, 0x56, 0x00]),
   cashdrawer: () => new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA]),
@@ -81,7 +83,8 @@ function trunc(s, w) {
   return t.length > w ? t.slice(0, w) : t;
 }
 
-// Struk -> byte ESC/POS (lebar 48 kolom, sesuai kertas 58mm)
+// Struk -> byte ESC/POS
+// Kertas 58mm, area cetak efektif ~48mm, Font B (condensed) = 48 kolom.
 export function buildEscPos(trx, bayar) {
   const W = 48;
   const rup = n => 'Rp' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
@@ -89,53 +92,63 @@ export function buildEscPos(trx, bayar) {
   const kembalian = Number(bayar || 0) - total;
   const shop = (trx.namaToko || 'CAFEKU').toUpperCase();
 
-  const ln = '='.repeat(W);
+  // pembatas cantik: garis tebal & tipis (hanya ASCII, aman di printer termal)
+  const SOLID = '='.repeat(W);            // header/footer tebal
+  const THIN = '-'.repeat(W);             // garis tipis (middle)
 
-  // dua kolom terjepit di dalam W kolom (value rata kanan)
-  const row = (label, value) =>
-    trunc(label, Math.max(1, W - String(value).length)) +
-    ' '.repeat(Math.max(0, W - String(value).length - trunc(label, W - String(value).length).length)) +
-    value;
+  // dua kolom sejajar: label kiri, nilai kanan rapat batas 48
+  const row = (label, value) => {
+    const v = String(value);
+    const maxLabel = Math.max(1, W - v.length);
+    const lbl = trunc(label, maxLabel);
+    return lbl + ' '.repeat(Math.max(0, W - lbl.length - v.length)) + v;
+  };
 
-  const lines = [
-    '   ' + shop,
-    '   STRUK KASIR',
+  // header (center)
+  const head = [
     '',
+    '  ' + shop,
+    '  STRUK KASIR',
+    SOLID,
     trx.noInvoice || '',
     trx.platform || 'OFFLINE',
     trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI',
     ...(trx.noMeja ? ['NO MEJA ' + String(trx.noMeja)] : []),
     ...(trx.namaPembeli ? ['PEMBELI ' + String(trx.namaPembeli).toUpperCase()] : []),
     (trx.oleh ? 'OLEH ' + trx.oleh.toUpperCase() : ''),
-    ln,
+    THIN,
   ];
 
+  // body item: 2 baris/item — baris 1 nama (kiri), baris 2 qty (kiri)+subtotal (kanan)
   const body = [];
   (trx.items || []).forEach(it => {
-    const nama = trunc((it.nama || '').toUpperCase(), W);
-    body.push(nama);
-    const sub = rup(it.hargaJual * it.qty);
-    const qtyLine = trunc('  ' + it.qty + ' x ' + rup(it.hargaJual), W - sub.length);
-    const paddedQty = qtyLine + ' '.repeat(Math.max(0, W - qtyLine.length - sub.length));
-    body.push(paddedQty + sub);
+    body.push(trunc((it.nama || '').toUpperCase(), W));
+    body.push(row('  ' + it.qty + ' x ' + rup(it.hargaJual), rup(it.hargaJual * it.qty)));
   });
-  body.push(ln);
+  body.push(SOLID);
 
-  const rows = [];
-  rows.push(row('Subtotal', rup(trx.subtotal)));
-  if (Number(trx.diskon)) rows.push(row('Diskon', '- ' + rup(trx.diskon)));
-  if (Number(trx.adjustment)) rows.push(row('Penyesuaian', rup(trx.adjustment)));
-  rows.push(row('TOTAL', rup(total)));
-  rows.push(row('Dibayar', rup(bayar)));
-  rows.push(kembalian >= 0 ? row('Kembalian', rup(kembalian)) : row('KURANG', rup(-kembalian)));
-  rows.push(ln, 'TERIMA KASIH', 'Sampai jumpa!');
+  // ringkasan + footer (dua kolom rata kanan utk angka, footer center)
+  const sum = [];
+  sum.push(row('Subtotal', rup(trx.subtotal)));
+  if (Number(trx.diskon)) sum.push(row('Diskon', '- ' + rup(trx.diskon)));
+  if (Number(trx.adjustment)) sum.push(row('Penyesuaian', rup(trx.adjustment)));
+  sum.push(row('TOTAL', rup(total)));
+  sum.push(row('Dibayar', rup(bayar)));
+  sum.push(kembalian >= 0 ? row('Kembalian', rup(kembalian)) : row('KURANG', rup(-kembalian)));
 
-  const parts = [esc.init(), esc.center(), esc.boldOn()];
-  lines.forEach(l => parts.push(esc.text(l)));
-  parts.push(esc.boldOff(), esc.left());
-  body.forEach(b => parts.push(esc.text(b)));
-  rows.forEach(r => parts.push(esc.text(r)));
-  parts.push(esc.text(''), esc.feed(4), esc.cut());
+  const foot = ['', SOLID, 'TERIMA KASIH', 'Sampai jumpa!'];
+
+  // Urutan ESC: init -> Font B (condensed 48 kolom) -> center utk header
+  const parts = [
+    esc.init(), esc.fontB(), esc.center(), esc.boldOn(),
+    ...head.map(l => esc.text(l)),
+    esc.boldOff(), esc.left(),
+    ...body.map(l => esc.text(l)),
+    ...sum.map(r => esc.text(r)),
+    esc.center(),
+    ...foot.map(l => esc.text(l)),
+    esc.text(''), esc.feed(4), esc.cut(),
+  ];
   return concatBytes(parts);
 }
 
@@ -323,7 +336,7 @@ export async function testPrint() {
   ];
 
   const byteParts = [
-    esc.init(),
+    esc.init(), esc.fontB(),
     ...text.map(l => {
       const bytes = new TextEncoder().encode(l + '\n');
       return bytes;
