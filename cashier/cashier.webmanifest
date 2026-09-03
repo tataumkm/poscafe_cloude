@@ -2,7 +2,7 @@
   "name": "Cafeku Kasir",
   "short_name": "Kasir",
   "description": "Aplikasi kasir sederhana untuk cafe",
-  "start_url": "/cashier/",
+  "start_url": "/poscafe_cloude/cashier/",
   "display": "standalone",
   "background_color": "#1F1B16",
   "theme_color": "#1F1B16",
