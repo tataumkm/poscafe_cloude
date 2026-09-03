@@ -23,5 +23,10 @@
   </div>
   <input type="file" id="import-file" accept="image/*" hidden />
   <script type="module" src="../js/app-cashier.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('../sw.js').catch(function () {});
+    }
+  </script>
 </body>
 </html>
