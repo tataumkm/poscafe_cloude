@@ -1307,6 +1307,10 @@ function renderLainnyaPage() {
 
     <div class="section-title" style="margin-top:10px">Pengaturan</div>
     <div class="card">
+      <label>Nama Cafe / Toko</label>
+      <input type="text" id="set-store-name" value="${escapeAttr(settings.namaToko || '')}" placeholder="mis. Cafeku" />
+      <label>Alamat</label>
+      <input type="text" id="set-store-addr" value="${escapeAttr(settings.alamat || '')}" placeholder="mis. Jl. Raya No.1, Jakarta" />
       <label>Margin Default (%)</label>
       <input type="number" id="set-margin" value="${settings.defaultMarginPercent}" />
       <label>Platform &amp; Admin Fee (%)</label>
@@ -1977,6 +1981,8 @@ async function saveAsetForm() {
 async function saveSettingsForm() {
   const s = getSettings();
   s.id = s.id || 'settings-1';
+  s.namaToko = document.getElementById('set-store-name').value.trim() || s.namaToko;
+  s.alamat = document.getElementById('set-store-addr').value.trim() || s.alamat;
   s.defaultMarginPercent = numOnly(document.getElementById('set-margin').value);
   document.querySelectorAll('[data-platform-nama]').forEach(el => {
     s.platforms[+el.dataset.platformNama].nama = el.value.trim();

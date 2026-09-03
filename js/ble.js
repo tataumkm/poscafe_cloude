@@ -92,6 +92,14 @@ export function buildEscPos(trx, bayar) {
   const total = Number(trx.total || 0);
   const kembalian = Number(bayar || 0) - total;
   const shop = (trx.namaToko || 'CAFEKU').toUpperCase();
+  const alamat = trx.alamat || '';
+  const tgl = trx.tanggal || '';
+  const formatTanggal = tgl ? new Date(tgl.replace(/-/g, '/')).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const waktu = trx.waktu || '';
+  const totalQty = (trx.items || []).reduce((s, it) => s + Number(it.qty || 0), 0);
+  const metode = trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI';
+  const platform = (trx.platform || 'OFFLINE').toUpperCase();
+  const noAntrian = trx.noMeja ? String(trx.noMeja) : '';
 
   // pembatas cantik: garis tebal & tipis (hanya ASCII, aman di printer termal)
   const SOLID = '='.repeat(W);            // header/footer tebal
@@ -105,20 +113,24 @@ export function buildEscPos(trx, bayar) {
     return lbl + ' '.repeat(Math.max(0, W - lbl.length - v.length)) + v;
   };
 
-  // header (center)
+  // header (center): nama toko + alamat
   const head = [
     '',
     '  ' + shop,
-    '  STRUK KASIR',
+    ...(alamat ? [trunc('  ' + alamat, W)] : []),
     SOLID,
-    trx.noInvoice || '',
-    trx.platform || 'OFFLINE',
-    trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI',
-    ...(trx.noMeja ? ['NO MEJA ' + String(trx.noMeja)] : []),
-    ...(trx.namaPembeli ? ['PEMBELI ' + String(trx.namaPembeli).toUpperCase()] : []),
-    (trx.oleh ? 'OLEH ' + trx.oleh.toUpperCase() : ''),
+    trx.noInvoice ? row('NO INVOICE :', trx.noInvoice) : '',
+    (tgl || waktu) ? row('TANGGAL', [formatTanggal, waktu].filter(Boolean).join(' ')) : '',
+    ...(trx.namaPembeli ? ['PEMBELI : ' + trunc(String(trx.namaPembeli).toUpperCase(), W - 10)] : []),
     THIN,
   ];
+
+  // bagian platform & no antrian — menonjol (uppercase, jelas)
+  const meta = [];
+  meta.push('');
+  meta.push(row('PLATFORM :', platform));
+  if (noAntrian) meta.push(row('NO ANTRIAN :', '#' + noAntrian));
+  meta.push(THIN);
 
   // body item: 2 baris/item ala minimarket.
   //   baris 1: nama produk (kiri, penuh sampai W)
@@ -128,24 +140,35 @@ export function buildEscPos(trx, bayar) {
     body.push(trunc((it.nama || '').toUpperCase(), W));
     body.push(row('  ' + it.qty + ' x ' + rup(it.hargaJual), rup(it.hargaJual * it.qty)));
   });
-  body.push(SOLID);
 
-  // ringkasan + footer (dua kolom rata kanan utk angka, footer center)
+  // ringkasan: total qty dulu, lalu subtotal dkk
   const sum = [];
-  sum.push(row('Subtotal', rup(trx.subtotal)));
-  if (Number(trx.diskon)) sum.push(row('Diskon', '- ' + rup(trx.diskon)));
-  if (Number(trx.adjustment)) sum.push(row('Penyesuaian', rup(trx.adjustment)));
+  sum.push(SOLID);
+  sum.push(row('TOTAL QTY', String(totalQty) + ' item'));
+  sum.push(row('SUBTOTAL', rup(trx.subtotal)));
+  if (Number(trx.diskon)) sum.push(row('DISKON', '- ' + rup(trx.diskon)));
+  if (Number(trx.adjustment)) sum.push(row('PENYESUAIAN', rup(trx.adjustment)));
   sum.push(row('TOTAL', rup(total)));
-  sum.push(row('Dibayar', rup(bayar)));
-  sum.push(kembalian >= 0 ? row('Kembalian', rup(kembalian)) : row('KURANG', rup(-kembalian)));
+  sum.push(row('DIBAYAR', rup(bayar)));
+  sum.push(kembalian >= 0 ? row('KEMBALIAN', rup(kembalian)) : row('KURANG', rup(-kembalian)));
+  sum.push(SOLID);
+  sum.push('METODE PEMBAYARAN : ' + metode);
+  sum.push('');
 
-  const foot = ['', SOLID, 'TERIMA KASIH', 'Sampai jumpa!'];
+  const foot = [
+    'Terima Kasih atas Kunjungan Anda.',
+    'Sampai jumpa lagi!',
+    '',
+    '',
+    '',
+  ];
 
   // Urutan ESC: init -> Font B (condensed, 42 kolom) -> center utk header
   const parts = [
     esc.init(), esc.fontB(), esc.center(), esc.boldOn(),
     ...head.map(l => esc.text(l)),
     esc.boldOff(), esc.left(),
+    ...meta.map(l => esc.text(l)),
     ...body.map(l => esc.text(l)),
     ...sum.map(r => esc.text(r)),
     esc.center(),

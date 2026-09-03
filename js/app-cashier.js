@@ -726,10 +726,12 @@ async function checkoutCashier() {
   const totalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
   const diskon = diskonTransaksi(totalJual);
   const total = totalJual - diskon + Number(state.adjustment || 0);
+  const sset = getSettings();
   const transaksi = {
     id: uid(), noInvoice: nextInvoiceNo(), tanggal: todayStr(), waktu: nowTimeStr(),
     platform: state.platform, metodeBayar: state.metodeBayar,
     noMeja: state.noMeja || '', namaPembeli: state.namaPembeli || '',
+    namaToko: sset.namaToko || '', alamat: sset.alamat || '',
     items: state.cart.map(c => ({ menuId: c.menuId, nama: c.nama, qty: c.qty, hargaJual: c.hargaJual, hpp: c.hpp })),
     subtotal: totalJual, diskon, adjustment: Number(state.adjustment || 0), total, totalHpp, laba: total - totalHpp,
     catatan: state.catatan || '', oleh: CashierAuth.getUser()?.nama || '',
