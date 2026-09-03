@@ -298,7 +298,7 @@ function cartQty(menuId) {
   const it = state.cart.find(c => c.menuId === menuId);
   return it ? it.qty : 0;
 }
-}
+
 
 // ================= CART SIDEBAR (tablet) =================
 function renderCartSidebarContent() {
