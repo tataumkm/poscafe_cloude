@@ -29,6 +29,9 @@ const state = {
   riwayatSearch: '',
   riwayatFilter: 'hari',
   users: [],
+  noMeja: '',
+  namaPembeli: '',
+  loggingIn: false,
 };
 
 const $app = document.getElementById('app');
@@ -45,14 +48,34 @@ async function init() {
     setInterval(() => { CashierStore.syncAll(true).then(() => CashierStore._flush()).then(render); }, AUTO_SYNC_INTERVAL);
   } else {
     state.page = 'login';
+    // tampilkan daftar kasir dari cache dulu (instan), lalu segarkan di background
+    const cached = CashierAuth.getCachedUsers();
+    state.users = cached.users;
     render();
-    await loadUsers();
+    refreshUsers();
+  }
+}
+
+async function refreshUsers() {
+  try {
+    const users = await CashierApi.getUsers();
+    if (Array.isArray(users) && users.length) {
+      state.users = users;
+      CashierAuth.cacheUsers(users);
+      // re-render hanya kalau masih login page & PIN belum diketik,
+      // supaya refresh tidak menghapus PIN yang sedang dimasukkan user.
+      const pinEl = document.getElementById('cl-pin');
+      if (state.page === 'login' && (!pinEl || !pinEl.value)) render();
+    }
+  } catch (e) {
+    // offline -> biarkan cache lama, dropdown tetap berfungsi
   }
 }
 
 async function loadUsers() {
   try {
     state.users = await CashierApi.getUsers();
+    CashierAuth.cacheUsers(state.users);
     render();
   } catch (e) {
     toast('Gagal load data: ' + e.message);
@@ -60,9 +83,13 @@ async function loadUsers() {
 }
 
 async function handleLogin() {
+  if (state.loggingIn) return;
   const nama = (document.getElementById('cl-nama') || {}).value || '';
   const pin = (document.getElementById('cl-pin') || {}).value || '';
   if (!nama || !pin) { toast('Pilih nama & isi PIN'); return; }
+  state.loggingIn = true;
+  const btn = document.querySelector('[data-login-btn]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Masuk…'; }
   try {
     await CashierAuth.login(nama, pin);
     state.page = 'main';
@@ -72,6 +99,12 @@ async function handleLogin() {
     setInterval(() => { CashierStore.syncAll(true).then(() => CashierStore._flush()).then(render); }, AUTO_SYNC_INTERVAL);
   } catch (err) {
     toast('Login gagal: ' + err.message);
+    // reset PIN supaya tidak ada residu yang membingungkan
+    const pinEl = document.getElementById('cl-pin');
+    if (pinEl) pinEl.value = '';
+    if (btn) { btn.disabled = false; btn.textContent = 'Masuk'; }
+  } finally {
+    state.loggingIn = false;
   }
 }
 
@@ -169,8 +202,15 @@ function render() {
         <button class="${state.tab === 'lainnya' ? 'active' : ''}" data-tab="lainnya"><i class="fa fa-ellipsis"></i><span>Lainnya</span></button>
       </nav>
     </div>
-    ${state.tab === 'kasir' ? renderTotalBar() + renderCartSheet() : ''}
+    ${state.tab === 'kasir' ? '<div id="total-bar-slot"></div>' + renderCartSheet() : ''}
   `;
+  if (state.page === 'main' && state.tab === 'kasir') renderTotalBarSlot();
+}
+
+function renderTotalBarSlot() {
+  const slot = document.getElementById('total-bar-slot');
+  if (!slot) return;
+  slot.innerHTML = state.cart.length ? renderTotalBar() : '';
 }
 
 function renderTotalBar() {
@@ -233,7 +273,32 @@ function renderLogin() {
 }
 
 // ================= TAB: KASIR — SPLIT VIEW =================
+function cariSesiBukaHariIni() {
+  const today = todayStr();
+  const kas = CashierStore.get('Kas').filter(k => k.tanggal === today);
+  // kalau sudah ada record tutup hari ini, sesi dianggap sudah ditutup
+  if (kas.some(k => k.sesi === 'tutup')) return null;
+  const r = kas.find(k => k.sesi === 'buka');
+  if (!r) return null;
+  return { id: r.id, saldoAwal: r.saldoAwal, waktuBuka: r.waktu, oleh: r.oleh, tanggal: r.tanggal };
+}
+
+function loadSesiFromStore() {
+  if (state.sesiKas) return;
+  state.sesiKas = cariSesiBukaHariIni();
+}
+
 function renderKasirSplit() {
+  loadSesiFromStore();
+  if (!state.sesiKas) {
+    return `
+      <div class="sesi-gate">
+        <div class="sg-icon"><i class="fa fa-cash-register"></i></div>
+        <div class="sg-title">Belum Melakukan Open Sesi</div>
+        <div class="sg-sub">Silakan buka sesi kas terlebih dahulu untuk mulai menjual.</div>
+        <button class="btn btn-primary" data-open-sesi-gate>Buka Sesi Kas</button>
+      </div>`;
+  }
   return `
     <div class="pos-layout">
       <div class="pos-menu-panel">
@@ -317,6 +382,20 @@ function cartQty(menuId) {
 
 
 // ================= CART SIDEBAR (tablet) =================
+function renderCustomerFields(prefix) {
+  const idMeja = (prefix || 'cs') + '-nomeja';
+  const idNama = (prefix || 'cs') + '-nama';
+  return `
+    <div class="cs-cust-row">
+      <label>No. Meja / Antrian</label>
+      <input type="text" id="${idMeja}" inputmode="text" placeholder="mis. 12" value="${escapeAttr(state.noMeja)}" autocomplete="off" />
+    </div>
+    <div class="cs-cust-row">
+      <label>Nama Pembeli</label>
+      <input type="text" id="${idNama}" placeholder="mis. Budi" value="${escapeAttr(state.namaPembeli)}" autocomplete="off" />
+    </div>`;
+}
+
 function renderCartSidebarContent() {
   if (!state.cart.length) {
     return `<div class="cs-header"><span>Keranjang</span></div><div class="cs-items"><div class="cs-empty">Keranjang kosong<br><small style="color:var(--ink-dim)">Tap menu untuk menambah</small></div></div>`;
@@ -338,6 +417,7 @@ function renderCartSidebarContent() {
     <div class="cs-header"><span>Keranjang</span><span class="cs-count">${state.cart.length} item</span></div>
     <div class="cs-items">${cartItems}</div>
     <div class="cs-footer">
+      <div class="cs-section">${renderCustomerFields()}</div>
       <div class="cs-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
       ${diskon ? `<div class="cs-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span></div>` : ''}
       ${state.adjustment ? `<div class="cs-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
@@ -465,10 +545,7 @@ function renderPromoSubtab() {
 function renderSesiSubtab() {
   if (!state.sesiKas) {
     const today = todayStr();
-    const kasRecords = CashierStore.get('Kas').filter(k => k.tanggal === today && k.sesi === 'buka');
-    if (kasRecords.length > 0) {
-      state.sesiKas = { id: kasRecords[0].id, saldoAwal: kasRecords[0].saldoAwal, waktuBuka: kasRecords[0].waktu, oleh: kasRecords[0].oleh, tanggal: kasRecords[0].tanggal };
-    }
+    state.sesiKas = cariSesiBukaHariIni();
     if (state.sesiKas) return renderSesiOpen();
     return `
       <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
@@ -477,11 +554,11 @@ function renderSesiSubtab() {
           <div class="sk-row"><span class="k">Tanggal</span><span class="v">${today}</span></div>
           <div class="sk-row"><span class="k">Kasir</span><span class="v">${escapeHtml(CashierAuth.getUser()?.nama || '')}</span></div>
           <div class="num-input-wrap"><label>Saldo Awal Kas (Rp)</label><input type="text" id="sk-saldo-awal" inputmode="numeric" placeholder="mis. 100000" autocomplete="off" readonly /></div>
-          <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-buka>Buka Sesi Kas</button>
-          <div class="num-keypad" data-target="sk-saldo-awal" style="display:none">
+          <div class="num-keypad" data-target="sk-saldo-awal">
             ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
             <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
           </div>
+          <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-buka>Buka Sesi Kas</button>
         </div>
       </div>`;
   }
@@ -508,7 +585,7 @@ function renderSesiOpen() {
         <div class="sk-row"><span class="k">Total Tunai Masuk</span><span class="v">${rupiah(totalTunai)}</span></div>
         <div class="sk-total"><span>Total Kas (teori)</span><span>${rupiah(harusnya)}</span></div>
         <div class="num-input-wrap"><label>Uang di Kotak Sekarang (Rp)</label><input type="text" id="sk-saldo-akhir" inputmode="numeric" placeholder="mis. ${harusnya.toLocaleString('id-ID')}" value="${harusnya}" autocomplete="off" readonly /></div>
-        <div class="num-keypad" data-target="sk-saldo-akhir" style="display:none">
+        <div class="num-keypad" data-target="sk-saldo-akhir">
           ${[1,2,3,4,5,6,7,8,9,0].map(n => `<button class="num-key" data-num="${n}">${n}</button>`).join('')}
           <button class="num-key num-del" data-num-del><i class="fa fa-backspace"></i></button>
         </div>
@@ -527,8 +604,7 @@ function renderStokSubtab() {
         ${bahanList.length === 0 ? `<div class="empty">Belum ada data bahan.</div>` : bahanList.map(b => {
           const min = Number(b.stokMinimum || 0);
           const low = Number(b.stok || 0) <= min;
-          const avco = Number(b.hargaAvco ?? 0);
-          return `<div class="stok-item"><div class="si-info"><div class="name">${escapeHtml(b.nama)} <span class="badge ${low ? 'low' : 'ok'}">${low ? 'Menipis' : 'Aman'}</span></div><div class="sub">AVCO ${rupiah(avco)} / ${b.satuan}</div></div><div style="text-align:right;font-family:var(--font-mono);font-weight:700;font-size:14px">${b.stok} ${b.satuan}</div></div>`;
+          return `<div class="stok-item"><div class="si-info"><div class="name">${escapeHtml(b.nama)} <span class="badge ${low ? 'low' : 'ok'}">${low ? 'Menipis' : 'Aman'}</span></div><div class="sub">Min. ${min} ${escapeHtml(b.satuan || '')}</div></div><div style="text-align:right;font-family:var(--font-mono);font-weight:700;font-size:14px">${b.stok} ${escapeHtml(b.satuan || '')}</div></div>`;
         }).join('')}
       </div>
     </div>`;
@@ -566,20 +642,9 @@ function renderCartRegion() {
 }
 
 function refreshTotalBar() {
-  if (!state.cart.length) {
-    const wrap = document.querySelector('.total-bar');
-    if (wrap) wrap.remove();
-    return;
-  }
-  const wrap = document.querySelector('.total-bar');
-  const n = document.createElement('div');
-  n.innerHTML = renderTotalBar();
-  const nn = n.firstChild;
-  if (!wrap) {
-    if (nn) $app.appendChild(nn);
-    return;
-  }
-  if (nn) wrap.replaceWith(nn);
+  const slot = document.getElementById('total-bar-slot');
+  if (!slot) return;
+  slot.innerHTML = state.cart.length ? renderTotalBar() : '';
 }
 
 function refreshSheet() {
@@ -618,6 +683,7 @@ async function checkoutCashier() {
   const transaksi = {
     id: uid(), noInvoice: nextInvoiceNo(), tanggal: todayStr(), waktu: nowTimeStr(),
     platform: state.platform, metodeBayar: state.metodeBayar,
+    noMeja: state.noMeja || '', namaPembeli: state.namaPembeli || '',
     items: state.cart.map(c => ({ menuId: c.menuId, nama: c.nama, qty: c.qty, hargaJual: c.hargaJual, hpp: c.hpp })),
     subtotal: totalJual, diskon, adjustment: Number(state.adjustment || 0), total, totalHpp, laba: total - totalHpp,
     catatan: state.catatan || '', oleh: CashierAuth.getUser()?.nama || ''
@@ -726,6 +792,8 @@ function printDialogCashier(trx, bayar) {
     <div class="pr-center"><b>${shopName}</b></div><div class="pr-center">STRUK KASIR</div><div class="pr-center">${escapeHtml(trx.noInvoice || '')}</div>
     <div class="pr-row"><span>Tanggal</span><span>${trx.tanggal || '-'}</span></div><div class="pr-row"><span>Jam</span><span>${trx.waktu || '-'}</span></div>
     <div class="pr-row"><span>Platform</span><span>${escapeHtml(trx.platform || 'Offline')}</span></div><div class="pr-row"><span>Metode</span><span>${escapeHtml(trx.metodeBayar === 'qris' ? 'QRIS' : 'Tunai')}</span></div>
+    ${trx.noMeja ? `<div class="pr-row"><span>No. Meja</span><span>${escapeHtml(trx.noMeja)}</span></div>` : ''}
+    ${trx.namaPembeli ? `<div class="pr-row"><span>Pembeli</span><span>${escapeHtml(trx.namaPembeli)}</span></div>` : ''}
     <div class="pr-divider"></div>${itemRows}<div class="pr-divider"></div>
     <div class="pr-row"><span>Subtotal</span><span>Rp${Number(trx.subtotal || 0).toLocaleString('id-ID')}</span></div>
     ${Number(trx.diskon) ? `<div class="pr-row"><span>Diskon</span><span>-Rp${trx.diskon.toLocaleString('id-ID')}</span></div>` : ''}
@@ -751,6 +819,8 @@ async function doPay() {
   state.cart = [];
   state.adjustment = 0;
   state.metodeBayar = 'tunai';
+  state.noMeja = '';
+  state.namaPembeli = '';
   toast('Transaksi selesai ✓');
   render();
   const pref = getPrintPref();
@@ -775,6 +845,8 @@ async function openSesiKas() {
   state.sesiKas = { id: trx.id, saldoAwal, waktuBuka: trx.waktu, oleh: trx.oleh, tanggal: trx.tanggal };
   closeSheet();
   toast('Sesi kas dibuka ✓');
+  state.tab = 'kasir';
+  state.subtab = null;
   render();
 }
 
@@ -805,7 +877,7 @@ async function tutupSesiKas() {
   const trx = { id: uid(), sesi: 'tutup', tanggal: today, waktu: nowTimeStr(), saldoAwal, saldoAkhir, totalTunai, totalTransaksi: transaksi.length, selisih, oleh: user?.nama || '', catatan: '' };
   await CashierStore.insert('Kas', trx);
   await CashierStore._flush();
-  const laporanHtml = renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi);
+  const laporanHtml = renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi, selisih);
   state.sesiKas = null;
   closeSheet();
   toast('Sesi kas ditutup ✓');
@@ -818,7 +890,9 @@ async function tutupSesiKas() {
   openSheet(html, 'laporan');
 }
 
-function renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi) {
+function renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi, selisih) {
+  const selIsPos = Number(selisih || 0) >= 0;
+  const selClass = selIsPos ? 'var(--positive)' : 'var(--negative)';
   return `
     <div style="text-align:center;margin-bottom:16px"><h2 style="margin:0;font-size:18px">CAFEKU KASIR</h2><div style="font-size:13px;color:var(--ink-dim)">Laporan Penjualan Hari Ini</div><div style="font-size:13px;color:var(--ink-dim)">${formatTanggalCashier(todayStr())}</div></div>
     <div style="border:1px solid var(--line);padding:8px;margin-bottom:12px;border-radius:6px">
@@ -827,7 +901,8 @@ function renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi) {
       <div class="row"><span class="k">Total Tunai</span><span class="v">${rupiah(totalTunai)}</span></div>
       <div class="row"><span class="k">QRIS</span><span class="v">${rupiah(transaksi.filter(p=>p.metodeBayar==='qris').reduce((s,p)=>s+Number(p.total||0),0))}</span></div>
       <div class="row" style="border-top:1px solid var(--line);padding-top:4px"><span class="k" style="font-weight:700">Saldo Akhir (teori)</span><span class="v">${rupiah(saldoAwal + totalTunai)}</span></div>
-      <div class="row" style="border-top:2px solid var(--ink);padding-top:4px"><span class="k" style="font-weight:700">Saldo Akhir (aktual)</span><span class="v">${rupiah(saldoAkhir)}</span></div>
+      <div class="row"><span class="k" style="font-weight:700">Saldo Akhir (aktual)</span><span class="v">${rupiah(saldoAkhir)}</span></div>
+      <div class="row" style="border-top:2px solid var(--ink);padding-top:4px"><span class="k" style="font-weight:700">Selisih</span><span class="v" style="color:${selClass};font-weight:800">${rupiah(selisih)}</span></div>
     </div>
     <div style="margin-bottom:8px;font-size:12px"><b>Riwayat Transaksi (${transaksi.length})</b></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -898,7 +973,16 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.loginBtn !== undefined) { await handleLogin(); return; }
   if (t.dataset.pinKey !== undefined) {
     const pinEl = document.getElementById('cl-pin');
-    if (pinEl && pinEl.value.length < 6) pinEl.value += t.dataset.pinKey;
+    if (pinEl && pinEl.value.length < 6) {
+      pinEl.value += t.dataset.pinKey;
+      // auto-login HANYA saat PIN yang diketik benar-benar cocok dengan user
+      // terpilih. Ini mencegah submit prematur (yang bikin rasa "freeze" saat
+      // fallback ke server yang lambat). Kalau tidak cocok, biarkan user
+      // mengetik lagi / menghapus tanpa terblokir.
+      const nama = (document.getElementById('cl-nama') || {}).value || '';
+      const sel = (state.users || []).find(u => u.nama === nama);
+      if (sel && pinEl.value === String(sel.pin)) handleLogin();
+    }
     return;
   }
   if (t.dataset.pinDel !== undefined) {
@@ -943,7 +1027,7 @@ document.addEventListener('click', async (e) => {
     const targetEl2 = document.getElementById('sk-saldo-akhir');
     const val = t.dataset.num;
     if (targetEl && targetEl.readOnly) { if (targetEl.value.length < 16) targetEl.value += val; }
-    else if (targetEl2 && targetEl2.readOnly) { if (targetEl2.value.length < 16) targetEl2.value += val; }
+    else if (targetEl2 && targetEl2.readOnly) { if (targetEl2.value.length < 16) targetEl2.value += val; updateSelisih(); }
     return;
   }
   if (t.dataset.numDel !== undefined) {
@@ -951,6 +1035,7 @@ document.addEventListener('click', async (e) => {
     const targetEl2 = document.getElementById('sk-saldo-akhir');
     if (targetEl && targetEl.value) targetEl.value = targetEl.value.slice(0, -1);
     if (targetEl2 && targetEl2.value) targetEl2.value = targetEl2.value.slice(0, -1);
+    if (targetEl2) updateSelisih();
     return;
   }
 
@@ -964,8 +1049,10 @@ document.addEventListener('click', async (e) => {
   }
 
   // Lainnya subtab
-  if (t.dataset.lainnyaSubtab) { state.subtab = t.dataset.lainnyaSubtab; render(); return; }
-  if (t.dataset.lainnyaBack !== undefined) { state.subtab = null; render(); return; }
+  const lainEl = t.closest('[data-lainnya-subtab]');
+  if (lainEl) { state.subtab = lainEl.dataset.lainnyaSubtab; render(); return; }
+  if (t.closest('[data-lainnya-back]')) { state.subtab = null; render(); return; }
+  if (t.dataset.openSesiGate !== undefined) { state.tab = 'lainnya'; state.subtab = 'sesi'; render(); return; }
 
   // Payment overlay numpad
   if (t.dataset.payAmount !== undefined) { payStr = String(Number(t.dataset.payAmount) || 0); renderPay(); return; }
@@ -981,8 +1068,9 @@ document.addEventListener('click', async (e) => {
   if (t.closest('[data-print-modal-done]')) { state.printModalTrx = null; state.printModalBayar = 0; closeSheet(); return; }
 
   // Reprint from riwayat
-  if (t.dataset.reprint) {
-    const tr = CashierStore.get('Penjualan').find(x => x.id === t.dataset.reprint);
+  const reprintEl = t.closest('[data-reprint]');
+  if (reprintEl) {
+    const tr = CashierStore.get('Penjualan').find(x => x.id === reprintEl.dataset.reprint);
     if (tr) {
       state.printModalTrx = tr; state.printModalBayar = Number(tr.total || 0);
       openSheet(`<div class="sheet-handle"></div><div class="sheet-head"><h2>Cetak Nota</h2></div><p style="text-align:center;color:var(--ink-dim);margin:0 0 16px">Klik Cetak untuk mencetak, atau Selesai untuk melewati.</p><button class="btn btn-primary" data-print-modal-print style="width:100%;margin-bottom:8px">Cetak Nota</button><button class="btn btn-ghost" data-print-modal-done style="width:100%">Selesai</button>`, 'print-modal');
@@ -1015,6 +1103,8 @@ document.addEventListener('input', (e) => {
     if (grid) grid.innerHTML = renderMenuGridItems();
     return;
   }
+  if (t.id === 'cs-nomeja' || t.id === 'sh-nomeja') { state.noMeja = t.value; return; }
+  if (t.id === 'cs-nama' || t.id === 'sh-nama') { state.namaPembeli = t.value; return; }
   if (t.id === 'sk-saldo-akhir') { updateSelisih(); return; }
   if (t.id === 'riwayat-search') { state.riwayatSearch = t.value; render(); return; }
   if (t.id === 'riwayat-filter') { state.riwayatFilter = t.value; render(); return; }

@@ -367,6 +367,8 @@ html { scrollbar-width: none; }
 .cs-total span:first-child { font-weight: 700 !important; color: var(--ink) !important; }
 .cs-total span:last-child { font-weight: 800 !important; color: var(--accent) !important; font-size: 18px; }
 .cs-section { margin-top: 10px; }
+.cs-cust-row { margin-top: 8px; }
+.cs-cust-row input { width: 100%; }
 .cs-section label {
   font-size: 11px; font-weight: 600; color: var(--ink-dim);
   text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px;
@@ -675,6 +677,21 @@ html { scrollbar-width: none; }
 .promo-card .pc-detail { font-size: 13px; color: var(--ink-dim); margin-top: 4px; line-height: 1.5; }
 
 /* ═══ SESI KAS ═══ */
+.sesi-gate {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 40px 24px; text-align: center; gap: 8px;
+}
+.sesi-gate .sg-icon {
+  width: 72px; height: 72px; border-radius: 20px;
+  background: var(--warn-bg); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; margin-bottom: 8px;
+}
+.sesi-gate .sg-title { font-size: 18px; font-weight: 700; color: var(--ink); }
+.sesi-gate .sg-sub { font-size: 13px; color: var(--ink-dim); max-width: 300px; margin-bottom: 12px; }
+.sesi-gate .btn { max-width: 240px; width: 100%; }
+
 .sesi-kas-card { padding: 16px; }
 .sk-row {
   display: flex; justify-content: space-between; align-items: center;
@@ -713,11 +730,11 @@ html { scrollbar-width: none; }
 }
 .num-input-wrap input:focus { border-color: var(--accent); }
 .num-keypad {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px;
 }
 .num-key {
-  aspect-ratio: 1.3; min-height: 52px; border: none; border-radius: var(--radius);
-  font-size: 22px; font-weight: 600; font-family: var(--font-mono);
+  aspect-ratio: 2.2; min-height: 42px; border: none; border-radius: var(--radius-sm);
+  font-size: 19px; font-weight: 600; font-family: var(--font-mono);
   color: var(--ink); background: var(--surface); box-shadow: var(--shadow-sm);
   cursor: pointer; transition: all .08s;
   display: flex; align-items: center; justify-content: center;

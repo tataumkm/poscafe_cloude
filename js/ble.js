@@ -57,6 +57,8 @@ export function buildEscPos(trx, bayar) {
     (trx.noInvoice || ''),
     (trx.platform || 'OFFLINE'),
     (trx.metodeBayar === 'qris' ? 'QRIS' : 'TUNAI'),
+    ...(trx.noMeja ? ['NO MEJA ' + String(trx.noMeja)] : []),
+    ...(trx.namaPembeli ? ['PEMBELI ' + String(trx.namaPembeli).toUpperCase()] : []),
     (trx.oleh ? 'OLEH ' + trx.oleh.toUpperCase() : '')
   ];
   const body = [];
