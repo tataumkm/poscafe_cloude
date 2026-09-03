@@ -595,7 +595,7 @@ function renderSesiSubtab() {
         <div class="sesi-kas-card sesi-compact">
           <div class="sk-row"><span class="k">Tanggal</span><span class="v">${today}</span></div>
           <div class="sk-row"><span class="k">Kasir</span><span class="v">${escapeHtml(CashierAuth.getUser()?.nama || '')}</span></div>
-          <div class="num-input-wrap"><label>Saldo Awal Kas (Rp)</label><input type="text" id="sk-saldo-awal" inputmode="numeric" placeholder="mis. 100000" value="${escapeAttr(draft)}" autocomplete="off" readonly /></div>
+          <div class="num-input-wrap"><label>Saldo Awal Kas (Rp)</label><input type="text" id="sk-saldo-awal" inputmode="numeric" placeholder="mis. 100.000" value="${escapeAttr(fmtDisplayRibuan(draft))}" autocomplete="off" readonly /></div>
           ${renderNumKeypad('sk-saldo-awal')}
           <button class="btn btn-primary" style="width:100%;margin-top:10px" data-sesi-buka>Buka Sesi Kas</button>
         </div>
@@ -633,7 +633,7 @@ function renderSesiOpen() {
         <div class="sk-row"><span class="k">Transaksi Tunai</span><span class="v">${tunaiTransaksi.length} ×</span></div>
         <div class="sk-row"><span class="k">Total Tunai Masuk</span><span class="v">${rupiah(totalTunai)}</span></div>
         <div class="sk-total"><span>Total Kas (teori)</span><span>${rupiah(harusnya)}</span></div>
-        <div class="num-input-wrap"><label>Uang di Kotak Sekarang (Rp)</label><input type="text" id="sk-saldo-akhir" inputmode="numeric" value="${escapeAttr(draftAkhir)}" autocomplete="off" readonly /></div>
+        <div class="num-input-wrap"><label>Uang di Kotak Sekarang (Rp)</label><input type="text" id="sk-saldo-akhir" inputmode="numeric" value="${escapeAttr(fmtDisplayRibuan(draftAkhir))}" autocomplete="off" readonly /></div>
         ${renderNumKeypad('sk-saldo-akhir')}
         <div class="sk-row"><span class="k">Selisih</span><span class="v" id="sk-selisih">${rupiah(0)}</span></div>
         <button class="btn btn-primary" style="width:100%;margin-top:10px" data-sesi-tutup>Tutup Sesi & Cetak Laporan</button>
@@ -921,6 +921,21 @@ function persistSesiDraft() {
   if (b) state.draftSaldoAkhir = b.value;
 }
 
+// simpan nilai mentah (digit) + tampilkan dengan pemisah ribuan (koma)
+function sesiSetValue(el, raw) {
+  el.dataset.raw = raw;
+  el.value = raw ? Number(raw).toLocaleString('en-US') : '';
+}
+function sesiRaw(el) {
+  if (!el) return '';
+  return (el.dataset && el.dataset.raw !== undefined && el.dataset.raw !== '') ? el.dataset.raw : el.value.replace(/\D/g, '');
+}
+function fmtDisplayRibuan(s) {
+  const d = String(s || '').replace(/[^\d]/g, '');
+  return d ? Number(d).toLocaleString('en-US') : '';
+}
+
+
 async function tutupSesiKas() {
   const s = state.sesiKas;
   if (!s) return;
@@ -1104,19 +1119,21 @@ document.addEventListener('click', async (e) => {
   if (kpTarget) {
     const el = document.getElementById(kpTarget);
     if (t.dataset.num !== undefined && el) {
-      if (el.value.length < 16) el.value += t.dataset.num;
+      const raw = sesiRaw(el);
+      if (raw.length < 15) sesiSetValue(el, raw + t.dataset.num);
       persistSesiDraft();
       if (kpTarget === 'sk-saldo-akhir') updateSelisih();
       return;
     }
     if (t.dataset.numDel !== undefined && el) {
-      el.value = el.value.slice(0, -1);
+      const raw = sesiRaw(el);
+      sesiSetValue(el, raw.slice(0, -1));
       persistSesiDraft();
       if (kpTarget === 'sk-saldo-akhir') updateSelisih();
       return;
     }
     if (t.dataset.numClear !== undefined && el) {
-      el.value = '';
+      sesiSetValue(el, '');
       persistSesiDraft();
       if (kpTarget === 'sk-saldo-akhir') updateSelisih();
       return;
@@ -1127,15 +1144,15 @@ document.addEventListener('click', async (e) => {
     const targetEl = document.getElementById('sk-saldo-awal');
     const targetEl2 = document.getElementById('sk-saldo-akhir');
     const val = t.dataset.num;
-    if (targetEl && targetEl.readOnly) { if (targetEl.value.length < 16) targetEl.value += val; persistSesiDraft(); }
-    else if (targetEl2 && targetEl2.readOnly) { if (targetEl2.value.length < 16) targetEl2.value += val; persistSesiDraft(); updateSelisih(); }
+    if (targetEl && targetEl.readOnly) { if (sesiRaw(targetEl).length < 15) sesiSetValue(targetEl, sesiRaw(targetEl) + val); persistSesiDraft(); }
+    else if (targetEl2 && targetEl2.readOnly) { if (sesiRaw(targetEl2).length < 15) sesiSetValue(targetEl2, sesiRaw(targetEl2) + val); persistSesiDraft(); updateSelisih(); }
     return;
   }
   if (t.dataset.numDel !== undefined) {
     const targetEl = document.getElementById('sk-saldo-awal');
     const targetEl2 = document.getElementById('sk-saldo-akhir');
-    if (targetEl && targetEl.value) targetEl.value = targetEl.value.slice(0, -1);
-    if (targetEl2 && targetEl2.value) targetEl2.value = targetEl2.value.slice(0, -1);
+    if (targetEl) sesiSetValue(targetEl, sesiRaw(targetEl).slice(0, -1));
+    if (targetEl2) sesiSetValue(targetEl2, sesiRaw(targetEl2).slice(0, -1));
     persistSesiDraft();
     if (targetEl2) updateSelisih();
     return;
@@ -1143,8 +1160,8 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.numClear !== undefined) {
     const targetEl = document.getElementById('sk-saldo-awal');
     const targetEl2 = document.getElementById('sk-saldo-akhir');
-    if (targetEl) targetEl.value = '';
-    if (targetEl2) targetEl2.value = '';
+    if (targetEl) sesiSetValue(targetEl, '');
+    if (targetEl2) sesiSetValue(targetEl2, '');
     persistSesiDraft();
     if (targetEl2) updateSelisih();
     return;

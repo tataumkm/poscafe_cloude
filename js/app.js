@@ -160,7 +160,7 @@ function openPromoForm(id) {
           <option value="rp" ${d.jenis !== 'persen' ? 'selected' : ''}>Rupiah (Rp)</option>
         </select>
       </div>
-      <div><label>Nilai</label><input type="number" id="pr-nilai" value="${d.nilai}" /></div>
+      <div><label>Nilai</label><input type="text" inputmode="numeric" data-rupiah id="pr-nilai" value="${d.nilai}" /></div>
     </div>
     <div class="hint" id="pr-jenis-hint">${d.tipe === 'transaksi' ? 'Persen dari subtotal transaksi.' : 'Persen dari harga jual menu.'}</div>
     <div class="field-row">
@@ -394,7 +394,7 @@ function renderCartInner() {
     ${diskonTransaksi(cartTotalJual) ? `<div class="row"><span class="k">Diskon Promo</span><span class="v negative">−${rupiah(diskonTransaksi(cartTotalJual))}</span></div>` : ''}
     <div>
       <label>Penyesuaian (promo/biaya iklan, boleh minus)</label>
-      <input type="number" id="input-adjustment" value="${state.adjustment}" placeholder="mis. -5000 untuk potongan" />
+      <input type="text" inputmode="numeric" data-rupiah id="input-adjustment" value="${state.adjustment}" placeholder="mis. -5000 untuk potongan" />
       <div class="hint">Isi minus kalau ada potongan promo/biaya iklan platform, isi plus kalau ada tambahan biaya lain.</div>
     </div>
     <div>
@@ -860,7 +860,7 @@ function renderMenuFormSheet() {
         Saran harga Offline: <b id="mf-saran-offline">${rupiah(saranOffline)}</b> · Saran harga Online (dengan admin platform): <b id="mf-saran-online">${rupiah(saranOnline)}</b>
       </div>
       <label>Harga Jual Tetap (opsional, kosongkan untuk pakai saran otomatis)</label>
-      <input type="number" id="mf-harga-manual" value="${d.hargaJualManual || ''}" placeholder="mis. 18000" />
+      <input type="text" inputmode="numeric" data-rupiah id="mf-harga-manual" value="${d.hargaJualManual || ''}" placeholder="mis. 18000" />
     </div>
 
     <button class="btn btn-primary" data-save-menu style="margin-top:14px">Simpan Menu</button>
@@ -958,10 +958,10 @@ function renderBelanjaFormSheet() {
     <div class="hint" id="bf-satuan-dasar-hint">dalam satuan dasar bahan</div>
 
     <label>Total Harga Pembelian (semua kemasan)</label>
-    <input type="number" id="bf-harga-total" placeholder="20000" />
+    <input type="text" inputmode="numeric" data-rupiah id="bf-harga-total" placeholder="20000" />
 
     <label>Stok Minimum (opsional, khusus bahan baru)</label>
-    <input type="number" id="bf-stok-min" placeholder="0" />
+    <input type="text" inputmode="numeric" data-rupiah id="bf-stok-min" placeholder="0" />
 
     <label>Supplier (opsional)</label>
     <input id="bf-supplier" placeholder="Toko Sumber Rejeki" />
@@ -1016,10 +1016,10 @@ function editBahanPrompt(bahanId) {
       <div><label>Satuan</label><input id="eb-satuan" value="${escapeAttr(b.satuan)}" /></div>
     </div>
     <label>Harga Rata-rata (AVCO) / Satuan</label>
-    <input type="number" id="eb-harga" value="${b.hargaAvco ?? b.hargaTerakhir ?? 0}" />
+    <input type="text" inputmode="numeric" data-rupiah id="eb-harga" value="${b.hargaAvco ?? b.hargaTerakhir ?? 0}" />
     <div class="hint">Ubah manual di sini hanya kalau kamu tahu persis harga rata-rata yang benar — biasanya AVCO sudah otomatis terhitung tiap kali kamu catat belanja bahan.</div>
     <label>Stok Minimum</label>
-    <input type="number" id="eb-min" value="${b.stokMinimum || 0}" />
+    <input type="text" inputmode="numeric" data-rupiah id="eb-min" value="${b.stokMinimum || 0}" />
     <button class="btn btn-primary" data-save-bahan="${b.id}" style="margin-top:10px">Simpan</button>
     <button class="btn btn-danger" data-delete-bahan="${b.id}" style="margin-top:8px">Hapus Bahan</button>
   `, 'edit-bahan');
@@ -1218,7 +1218,7 @@ function renderAkuntansi() {
     <div class="card">
       <div class="row"><span class="k">Kas Teori</span><span class="v big">${rupiah(kas)}</span></div>
       <label>Kas Fisik (hasil hitung)</label>
-      <input type="number" id="op-kas-fisik" value="${opnameKasFisik()}" placeholder="0" />
+      <input type="text" inputmode="numeric" data-rupiah id="op-kas-fisik" value="${opnameKasFisik()}" placeholder="0" />
       <label>Keterangan (opsional)</label>
       <input id="op-ket" placeholder="mis. setoran hari ini" />
       <button class="btn btn-primary" data-save-opname style="margin-top:10px">Simpan Opname Kas</button>
@@ -1534,7 +1534,7 @@ function openModalForm() {
     <div class="sheet-handle"></div>
     <div class="sheet-head"><h2>Tambah Modal</h2><button class="btn-icon" data-close-sheet>✕</button></div>
     <label>Tanggal</label><input type="date" id="mo-tanggal" value="${todayStr()}" />
-    <label>Jumlah</label><input type="number" id="mo-jumlah" placeholder="5000000" />
+    <label>Jumlah</label><input type="text" inputmode="numeric" data-rupiah id="mo-jumlah" placeholder="5000000" />
     <label>Keterangan</label><input id="mo-ket" placeholder="Setoran modal awal" />
     <button class="btn btn-primary" data-save-modal style="margin-top:10px">Simpan</button>
   `, 'modal-form');
@@ -1547,8 +1547,8 @@ function openAsetForm() {
     <label>Nama Aset</label><input id="as-nama" placeholder="Mesin Espresso" />
     <label>Kategori</label><input id="as-kategori" placeholder="Peralatan Dapur" />
     <div class="field-row">
-      <div><label>Jumlah Unit</label><input type="number" id="as-qty" value="1" /></div>
-      <div><label>Harga Satuan</label><input type="number" id="as-harga" placeholder="3000000" /></div>
+      <div><label>Jumlah Unit</label><input type="text" inputmode="numeric" data-rupiah id="as-qty" value="1" /></div>
+      <div><label>Harga Satuan</label><input type="text" inputmode="numeric" data-rupiah id="as-harga" placeholder="3000000" /></div>
     </div>
     <div class="row"><span class="k">Total</span><span class="v big" id="as-total-preview">Rp0</span></div>
     <button class="btn btn-primary" data-save-aset style="margin-top:10px">Simpan</button>
@@ -1723,6 +1723,12 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('input', (e) => {
   const t = e.target;
+  // format otomatis ribuan (koma) untuk input bertanda data-rupiah
+  if (t && t.hasAttribute && t.hasAttribute('data-rupiah')) {
+    const neg = /^\s*-/.test(t.value);
+    const d = t.value.replace(/[^\d]/g, '');
+    t.value = d ? (neg ? '-' : '') + Number(d).toLocaleString('en-US') : '';
+  }
   if (t.id === 'cart-search') { state.cartSearch = t.value; renderMenuList(); return; }
   if (t.id === 'input-adjustment') {
     state.adjustment = numOnly(t.value);
