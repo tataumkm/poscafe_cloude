@@ -2,7 +2,7 @@
   "name": "Cafeku — Kasir & Manajemen Cafe",
   "short_name": "CafePOS",
   "description": "Aplikasi kasir, stok, resep HPP, dan laporan keuangan sederhana untuk cafe.",
-  "start_url": "./",
+  "start_url": "./poscafe_cloude/",
   "id": "./",
   "display": "standalone",
   "icons": [
