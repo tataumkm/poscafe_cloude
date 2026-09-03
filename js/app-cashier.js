@@ -725,6 +725,8 @@ async function checkoutCashier() {
   const totalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
   const totalHpp = state.cart.reduce((s, c) => s + c.hpp * c.qty, 0);
   const diskon = diskonTransaksi(totalJual);
+  const dinfo = diskonTransaksiInfo(totalJual);
+  const diskonDetail = dinfo ? dinfo.label + (dinfo.promo.jenis === 'persen' ? ' ' + dinfo.promo.nilai + '%' : '') : '';
   const total = totalJual - diskon + Number(state.adjustment || 0);
   const sset = getSettings();
   const transaksi = {
@@ -732,6 +734,7 @@ async function checkoutCashier() {
     platform: state.platform, metodeBayar: state.metodeBayar,
     noMeja: state.noMeja || '', namaPembeli: state.namaPembeli || '',
     namaToko: sset.namaToko || '', alamat: sset.alamat || '',
+    diskonDetail,
     items: state.cart.map(c => ({ menuId: c.menuId, nama: c.nama, qty: c.qty, hargaJual: c.hargaJual, hpp: c.hpp })),
     subtotal: totalJual, diskon, adjustment: Number(state.adjustment || 0), total, totalHpp, laba: total - totalHpp,
     catatan: state.catatan || '', oleh: CashierAuth.getUser()?.nama || '',

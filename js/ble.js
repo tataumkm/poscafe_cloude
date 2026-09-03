@@ -113,10 +113,9 @@ export function buildEscPos(trx, bayar) {
     return lbl + ' '.repeat(Math.max(0, W - lbl.length - v.length)) + v;
   };
 
-  // header (center): nama toko + alamat
-  const head = [
-    '',
-    '  ' + shop,
+  // header: nama toko (Font A, besar, center) + alamat + info (Font B)
+  const headTop = [shop];
+  const headRest = [
     ...(alamat ? [trunc('  ' + alamat, W)] : []),
     SOLID,
     trx.noInvoice ? row('NO INVOICE :', trx.noInvoice) : '',
@@ -146,34 +145,34 @@ export function buildEscPos(trx, bayar) {
   sum.push(SOLID);
   sum.push(row('TOTAL QTY', String(totalQty) + ' item'));
   sum.push(row('SUBTOTAL', rup(trx.subtotal)));
-  if (Number(trx.diskon)) sum.push(row('DISKON', '- ' + rup(trx.diskon)));
+  if (Number(trx.diskon)) sum.push(row('DISKON' + (trx.diskonDetail ? ' (' + trunc(trx.diskonDetail, 24) + ')' : ''), '-' + rup(trx.diskon)));
   if (Number(trx.adjustment)) sum.push(row('PENYESUAIAN', rup(trx.adjustment)));
   sum.push(row('TOTAL', rup(total)));
   sum.push(row('DIBAYAR', rup(bayar)));
   sum.push(kembalian >= 0 ? row('KEMBALIAN', rup(kembalian)) : row('KURANG', rup(-kembalian)));
   sum.push(SOLID);
   sum.push('METODE PEMBAYARAN : ' + metode);
-  sum.push('');
 
   const foot = [
     'Terima Kasih atas Kunjungan Anda.',
     'Sampai jumpa lagi!',
     '',
-    '',
-    '',
   ];
 
-  // Urutan ESC: init -> Font B (condensed, 42 kolom) -> center utk header
+  // Urutan ESC: nama cafe Font A besar (center bold), lalu Font B untuk isi.
   const parts = [
-    esc.init(), esc.fontB(), esc.center(), esc.boldOn(),
-    ...head.map(l => esc.text(l)),
-    esc.boldOff(), esc.left(),
+    esc.init(), esc.fontA(), esc.center(), esc.boldOn(),
+    esc.text(''),
+    ...headTop.map(l => esc.text(l)),
+    esc.boldOff(), esc.fontB(),
+    ...headRest.map(l => esc.text(l)),
+    esc.left(),
     ...meta.map(l => esc.text(l)),
     ...body.map(l => esc.text(l)),
     ...sum.map(r => esc.text(r)),
     esc.center(),
     ...foot.map(l => esc.text(l)),
-    esc.text(''), esc.feed(4), esc.cut(),
+    esc.feed(2), esc.cut(),
   ];
   return concatBytes(parts);
 }
