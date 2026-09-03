@@ -84,9 +84,10 @@ function trunc(s, w) {
 }
 
 // Struk -> byte ESC/POS
-// Kertas 58mm, area cetak efektif ~48mm, Font B (condensed) = 48 kolom.
+// Kertas 58/56mm, area cetak efektif ~48mm.
+// Printer RPP02N wrap pada 48 kolom -> pakai Font B lebar aman 42 kolom.
 export function buildEscPos(trx, bayar) {
-  const W = 48;
+  const W = 42;
   const rup = n => 'Rp' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
   const total = Number(trx.total || 0);
   const kembalian = Number(bayar || 0) - total;
@@ -96,7 +97,7 @@ export function buildEscPos(trx, bayar) {
   const SOLID = '='.repeat(W);            // header/footer tebal
   const THIN = '-'.repeat(W);             // garis tipis (middle)
 
-  // dua kolom sejajar: label kiri, nilai kanan rapat batas 48
+  // dua kolom sejajar: label kiri, nilai kanan rapat batas W
   const row = (label, value) => {
     const v = String(value);
     const maxLabel = Math.max(1, W - v.length);
@@ -119,17 +120,13 @@ export function buildEscPos(trx, bayar) {
     THIN,
   ];
 
-  // body item: 1 baris/item, minimalis.
-  // Format:  [nama................] [qtyxHarga]  [Subtotal]
-  // Kanan (qtyxharga + subtotal) rata kanan; nama di kiri dipotong.
+  // body item: 2 baris/item ala minimarket.
+  //   baris 1: nama produk (kiri, penuh sampai W)
+  //   baris 2: qty x harga (kiri)  +  subtotal (kanan)
   const body = [];
   (trx.items || []).forEach(it => {
-    const qtyline = String(it.qty) + 'x' + rup(it.hargaJual);
-    const sub = rup(it.hargaJual * it.qty);
-    const rightBlock = qtyline + ' ' + sub;                 // ukuran kanan
-    const nameMax = Math.max(1, W - rightBlock.length - 1);
-    const name = trunc((it.nama || '').toUpperCase(), nameMax);
-    body.push(name + ' '.repeat(Math.max(0, W - name.length - rightBlock.length)) + rightBlock);
+    body.push(trunc((it.nama || '').toUpperCase(), W));
+    body.push(row('  ' + it.qty + ' x ' + rup(it.hargaJual), rup(it.hargaJual * it.qty)));
   });
   body.push(SOLID);
 
@@ -144,7 +141,7 @@ export function buildEscPos(trx, bayar) {
 
   const foot = ['', SOLID, 'TERIMA KASIH', 'Sampai jumpa!'];
 
-  // Urutan ESC: init -> Font B (condensed 48 kolom) -> center utk header
+  // Urutan ESC: init -> Font B (condensed, 42 kolom) -> center utk header
   const parts = [
     esc.init(), esc.fontB(), esc.center(), esc.boldOn(),
     ...head.map(l => esc.text(l)),

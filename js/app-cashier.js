@@ -151,6 +151,31 @@ function diskonTransaksi(subtotal) {
     return p.jenis === 'persen' ? Math.min(v, subtotal) : v;
   }));
 }
+// promo transaksi yang terpakai (memberi diskon terbesar) + detail label
+function diskonTransaksiInfo(subtotal) {
+  const promos = getPromoAktif().filter(p => p.tipe === 'transaksi');
+  if (!promos.length) return null;
+  let best = null;
+  for (const p of promos) {
+    const v = potonganPromo(p, subtotal);
+    const nominal = p.jenis === 'persen' ? Math.min(v, subtotal) : v;
+    if (nominal <= 0) continue;
+    if (!best || nominal > best.diskon) {
+      const label = p.nama || (p.jenis === 'persen' ? 'Diskon ' + p.nilai + '%' : 'Diskon Rp');
+      const detail = p.jenis === 'persen' ? 'Diskon ' + p.nilai + '%' : null;
+      best = { promo: p, diskm: Math.round(nominal), label, detail };
+    }
+  }
+  return best;
+}
+// note kecil berisi info diskon transaksi yang didapat konsumen
+function renderDiskonNote(subtotal) {
+  const info = diskonTransaksiInfo(subtotal);
+  if (!info) return '';
+  const pecah = info.promo.jenis === 'persen' && info.promo.nilai
+    ? ' • ' + info.promo.nilai + '%' : '';
+  return `<div class="cs-diskon-note">${info.label}${pecah} — potongan ${rupiah(info.diskm)}</div>`;
+}
 function potonganPromo(p, subtotal) {
   if (p.jenis === 'persen') return subtotal * Number(p.nilai) / 100;
   return Number(p.nilai || 0);
@@ -399,13 +424,15 @@ function renderCustomerFields(prefix) {
   const idMeja = (prefix || 'cs') + '-nomeja';
   const idNama = (prefix || 'cs') + '-nama';
   return `
-    <div class="cs-cust-row">
-      <label>No. Meja / Antrian</label>
-      <input type="text" id="${idMeja}" inputmode="numeric" pattern="[0-9]*" placeholder="mis. 12" value="${escapeAttr(state.noMeja)}" autocomplete="off" />
-    </div>
-    <div class="cs-cust-row">
-      <label>Nama Pembeli</label>
-      <input type="text" id="${idNama}" placeholder="mis. Budi" value="${escapeAttr(state.namaPembeli)}" autocomplete="off" />
+    <div class="cs-cust-grid">
+      <div class="cs-cust-row">
+        <label>No. Meja / Antrian</label>
+        <input type="text" id="${idMeja}" inputmode="numeric" pattern="[0-9]*" placeholder="mis. 12" value="${escapeAttr(state.noMeja)}" autocomplete="off" />
+      </div>
+      <div class="cs-cust-row">
+        <label>Nama Pembeli</label>
+        <input type="text" id="${idNama}" placeholder="mis. Budi" value="${escapeAttr(state.namaPembeli)}" autocomplete="off" />
+      </div>
     </div>`;
 }
 
@@ -432,7 +459,7 @@ function renderCartSidebarContent() {
     <div class="cs-footer">
       <div class="cs-section">${renderCustomerFields()}</div>
       <div class="cs-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
-      ${diskon ? `<div class="cs-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span></div>` : ''}
+      ${diskon ? `<div class="cs-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span>${renderDiskonNote(totalJual)}</div>` : ''}
       ${state.adjustment ? `<div class="cs-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
       <div class="cs-row cs-total"><span>TOTAL</span><span>${rupiah(grandTotal)}</span></div>
       <div class="cs-section"><label>Platform</label><div class="cs-btn-row">
@@ -479,7 +506,7 @@ function renderSheetFooter() {
   return `
     <div class="cs-sheet-section">${renderCustomerFields('sh')}</div>
     <div class="cs-sheet-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
-    ${diskon ? `<div class="cs-sheet-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span></div>` : ''}
+    ${diskon ? `<div class="cs-sheet-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span>${renderDiskonNote(totalJual)}</div>` : ''}
     ${state.adjustment ? `<div class="cs-sheet-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
     <div class="cs-sheet-row cs-sheet-total"><span>TOTAL</span><span>${rupiah(grandTotal)}</span></div>
     <div class="cs-sheet-section"><label>Platform</label><div class="cs-sheet-prow">

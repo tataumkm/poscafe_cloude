@@ -1,4 +1,4 @@
-// Self-check: buildEscPos menghasilkan baris <= 48 kolom (58mm)
+// Self-check: buildEscPos menghasilkan baris <= 42 kolom (58mm, Font B)
 // Jalankan: node check-escpos.mjs
 import { buildEscPos } from './js/ble.js';
 
@@ -34,16 +34,16 @@ for (let i = 0; i < bytes.length; i++) {
 const lines = txt.split('\n').filter(l => l.length > 0);
 let fail = 0;
 for (const l of lines) {
-  if (l.length > 48) {
+  if (l.length > 42) {
     console.log(`FAIL(${l.length}): "${l}"`);
     fail++;
   }
 }
 
 if (fail) {
-  console.log(`\n${fail} baris melebihi 48 kolom.`);
+  console.log(`\n${fail} baris melebihi 42 kolom.`);
   process.exit(1);
 }
-console.log(`OK: semua ${lines.length} baris <= 48 kolom.`);
+console.log(`OK: semua ${lines.length} baris <= 42 kolom.`);
 console.log('Contoh item multi-qty:');
 console.log(lines.find(l => l.includes('500')));
