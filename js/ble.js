@@ -89,6 +89,7 @@ export function buildEscPos(trx, bayar) {
 }
 
 let device = null;
+let txChar = null;
 
 const ms = n => new Promise(r => setTimeout(r, n));
 
@@ -136,22 +137,44 @@ export async function connectPrinter() {
   return device.name || 'Printer';
 }
 
+// UUID umum untuk channel data printer thermal BT (UART/HM-10)
+const UUID_WRITE_PRIORITY = [
+  '0000ffe1-0000-1000-8000-00805f9b34fb', // FFE1 (HM-10 / banyak thermal)
+  '0000ffe2-0000-1000-8000-00805f9b34fb',
+  '49535343-8841-43f4-a8d4-ecbe34729bb3', // RedBear BLE Mini
+  '0000fff2-0000-1000-8000-00805f9b34fb',
+];
+
 async function findTxCharacteristic(server) {
-  const services = server.getPrimaryServices;
-  if (!services) {
-    const svc = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-    const char = await svc.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
-    return char;
-  }
   const svcs = await server.getPrimaryServices();
+  const candidates = [];
+
+  // 1) karakteristik tulis yang UUID-nya dikenali (pakai yang punya uuid)
   for (const svc of svcs) {
-    try {
-      const chars = await svc.getCharacteristics();
-      for (const c of chars) {
-        if (c.properties.write || c.properties.writeWithoutResponse) return c;
+    let chars = [];
+    try { chars = await svc.getCharacteristics(); } catch (e) { continue; }
+    for (const c of chars) {
+      if (c.properties.writeWithoutResponse || c.properties.write) {
+        if (UUID_WRITE_PRIORITY.includes(c.uuid.toLowerCase())) {
+          txChar = c; return c;
+        }
       }
-    } catch (e) { /* skip */ }
+    }
   }
+
+  // 2) fallback: ambil SEMUA karakteristik tulis, prioritaskan yang punya properti
+  //    'write' (dengan respons) untuk data, lalu writeWithoutResponse.
+  for (const svc of svcs) {
+    let chars = [];
+    try { chars = await svc.getCharacteristics(); } catch (e) { continue; }
+    for (const c of chars) {
+      if (c.properties.write) candidates.push({ c, w: 0 });
+      else if (c.properties.writeWithoutResponse) candidates.push({ c, w: 1 });
+    }
+  }
+  candidates.sort((a, b) => a.w - b.w);
+  if (candidates.length) { txChar = candidates[0].c; return txChar; }
+
   throw new Error('Tidak menemukan karakteristik tulis di printer.');
 }
 
@@ -160,29 +183,48 @@ export async function disconnectPrinter() {
     try { device.gatt.disconnect(); } catch (e) {}
   }
   device = null;
+  txChar = null;
 }
 
-// Kirim byte ke printer (dipecah per 20 byte — batas MTU BLE — dengan jeda,
-// supaya printer thermal BT tidak men-dump data hingga hilang)
+// Kirim byte ke printer (dipecah per 20 byte — batas MTU BLE — dengan jeda)
 export async function printBytes(bytes) {
   if (!device || !device.gatt || !device.gatt.connected) {
     throw new Error('Printer belum terkoneksi.');
+  }
+  // pastikan tahu karakteristik tulis (simpan dari connect)
+  if (!txChar) {
+    await findTxCharacteristic(await device.gatt.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb').catch(() => null));
   }
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const CHUNK = 20;
   const DELAY = 40;
 
+  // coba pakai txChar yang tersimpan; kalau ada properti write, pakai itu
+  // karena beberapa printer menolak writeWithoutResponse untuk data.
+  const writeChunk = async (c, part) => {
+    if (c.properties.writeWithoutResponse) {
+      try { await c.writeValueWithoutResponse(part); return; } catch (e) { /* coba write */ }
+    }
+    if (c.properties.write) { await c.writeValue(part); return; }
+    throw new Error('Karakteristik tidak bisa ditulisi.');
+  };
+
+  if (txChar && (txChar.properties.write || txChar.properties.writeWithoutResponse)) {
+    for (let i = 0; i < arr.length; i += CHUNK) {
+      await writeChunk(txChar, arr.slice(i, i + CHUNK));
+      await ms(DELAY);
+    }
+    return;
+  }
+
+  // fallback: scan langsung
   const svcs = await device.gatt.getPrimaryServices();
   for (const svc of svcs) {
-    const chars = await svc.getCharacteristics();
+    const chars = await svc.getCharacteristics().catch(() => []);
     for (const c of chars) {
-      const canWriteNR = c.properties.writeWithoutResponse;
-      const canWrite = c.properties.write;
-      if (canWriteNR || canWrite) {
+      if (c.properties.writeWithoutResponse || c.properties.write) {
         for (let i = 0; i < arr.length; i += CHUNK) {
-          const part = arr.slice(i, i + CHUNK);
-          if (canWriteNR) await c.writeValueWithoutResponse(part);
-          else await c.writeValue(part);
+          await writeChunk(c, arr.slice(i, i + CHUNK));
           await ms(DELAY);
         }
         return;
