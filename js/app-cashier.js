@@ -277,20 +277,16 @@ function renderLogin() {
 }
 
 // ================= TAB: KASIR — SPLIT VIEW =================
-// POS ini single-shift per hari: begitu ada record Kas (buka ATAU tutup)
-// di tanggal itu, sesi dianggap sudah dipakai — jangan minta buka lagi.
-function adaKasHariIni() {
-  const today = todayStr();
-  return CashierStore.get('Kas').filter(k => k.tanggal === today).length > 0;
-}
-
+// Multi-sesi per hari didukung. Sesi aktif = record Kas 'buka' yang id-nya
+// belum punya pasangan 'tutup' (yang membawa sesiId = id buka tsb).
+// Ganti kasir = tutup sesi dulu (laporan), lalu kasir baru buka sesi baru.
 function cariSesiBukaHariIni() {
   const today = todayStr();
-  const kas = CashierStore.get('Kas').filter(k => k.tanggal === today);
-  const r = kas.find(k => k.sesi === 'buka');
-  if (kas.some(k => k.sesi === 'tutup')) return null; // sudah tutup -> sudah dipakai
+  const semua = CashierStore.get('Kas');
+  const tutupSesiIds = semua.filter(k => k.sesi === 'tutup').map(k => k.sesiId);
+  const r = semua.find(k => k.tanggal === today && k.sesi === 'buka' && !tutupSesiIds.includes(k.id));
   if (!r) return null;
-  return { id: r.id, saldoAwal: r.saldoAwal, waktuBuka: r.waktu, oleh: r.oleh, tanggal: r.tanggal, closed: false };
+  return { id: r.id, sesiId: r.sesiId || r.id, saldoAwal: r.saldoAwal, waktuBuka: r.waktu, oleh: r.oleh, tanggal: r.tanggal };
 }
 
 function loadSesiFromStore() {
@@ -298,16 +294,22 @@ function loadSesiFromStore() {
   state.sesiKas = cariSesiBukaHariIni();
 }
 
+// transaksi milik sesi aktif ini (untuk rekapan / laporan / tutup sesi)
+function transaksiSesiIni() {
+  const sid = state.sesiKas && state.sesiKas.id;
+  if (!sid) return [];
+  return CashierStore.get('Penjualan').filter(p => p.sesiId === sid);
+}
+
 function renderKasirSplit() {
   loadSesiFromStore();
   if (!state.sesiKas) {
-    const sudah = adaKasHariIni();
     return `
       <div class="sesi-gate">
         <div class="sg-icon"><i class="fa fa-cash-register"></i></div>
-        <div class="sg-title">${sudah ? 'Sesi Kas Hari Ini Selesai' : 'Belum Melakukan Open Sesi'}</div>
-        <div class="sg-sub">${sudah ? 'Sesi kas untuk hari ini sudah ditutup. Single shift per hari.' : 'Silakan buka sesi kas terlebih dahulu untuk mulai menjual.'}</div>
-        ${sudah ? '' : `<button class="btn btn-primary" data-open-sesi-gate>Buka Sesi Kas</button>`}
+        <div class="sg-title">Belum Melakukan Open Sesi</div>
+        <div class="sg-sub">Silakan buka sesi kas terlebih dahulu untuk mulai menjual.</div>
+        <button class="btn btn-primary" data-open-sesi-gate>Buka Sesi Kas</button>
       </div>`;
   }
   return `
@@ -559,22 +561,10 @@ function renderSesiSubtab() {
     const today = todayStr();
     state.sesiKas = cariSesiBukaHariIni();
     if (state.sesiKas) return renderSesiOpen();
-    if (adaKasHariIni()) {
-      // sesi sudah dipakai (ditutup) hari ini -> jangan tampilkan form buka
-      return `
-        <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
-          <div class="subtab-header"><button class="subtab-back" data-lainnya-back><i class="fa fa-arrow-left"></i></button><h2>Sesi Kas</h2></div>
-          <div class="sesi-gate" style="padding:32px 24px">
-            <div class="sg-icon"><i class="fa fa-check-circle"></i></div>
-            <div class="sg-title">Sesi Kas Hari Ini Selesai</div>
-            <div class="sg-sub">Sesi untuk ${today} sudah ditutup. Single shift per hari — tidak bisa buka lagi.</div>
-          </div>
-        </div>`;
-    }
     const draft = state.draftSaldoAwal || '';
     return `
       <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
-        <div class="subtab-header"><button class="subtab-back" data-lainnya-back><i class="fa fa-arrow-left"></i></button><h2>Sesi Kas</h2></div>
+        <div class="subtab-header"><button class="subtab-back" data-lainnya-back><i class="fa fa-arrow-left"></i></button><h2>Buka Sesi Kas</h2></div>
         <div class="sesi-kas-card sesi-compact">
           <div class="sk-row"><span class="k">Tanggal</span><span class="v">${today}</span></div>
           <div class="sk-row"><span class="k">Kasir</span><span class="v">${escapeHtml(CashierAuth.getUser()?.nama || '')}</span></div>
@@ -600,8 +590,7 @@ function renderNumKeypad(target) {
 
 function renderSesiOpen() {
   const s = state.sesiKas;
-  const today = todayStr();
-  const transaksi = CashierStore.get('Penjualan').filter(p => p.tanggal === today);
+  const transaksi = transaksiSesiIni();
   const tunaiTransaksi = transaksi.filter(p => p.metodeBayar === 'tunai');
   const totalTunai = tunaiTransaksi.reduce((sum, p) => sum + Number(p.total || 0), 0);
   const saldoAwal = Number(s.saldoAwal || 0);
@@ -716,7 +705,8 @@ async function checkoutCashier() {
     noMeja: state.noMeja || '', namaPembeli: state.namaPembeli || '',
     items: state.cart.map(c => ({ menuId: c.menuId, nama: c.nama, qty: c.qty, hargaJual: c.hargaJual, hpp: c.hpp })),
     subtotal: totalJual, diskon, adjustment: Number(state.adjustment || 0), total, totalHpp, laba: total - totalHpp,
-    catatan: state.catatan || '', oleh: CashierAuth.getUser()?.nama || ''
+    catatan: state.catatan || '', oleh: CashierAuth.getUser()?.nama || '',
+    sesiId: (state.sesiKas && state.sesiKas.id) || ''
   };
   state.stagedTrx = transaksi;
   payStr = '';
@@ -885,8 +875,7 @@ async function openSesiKas() {
 function updateSelisih() {
   const s = state.sesiKas;
   if (!s) return;
-  const today = todayStr();
-  const transaksi = CashierStore.get('Penjualan').filter(p => p.tanggal === today);
+  const transaksi = transaksiSesiIni();
   const totalTunai = transaksi.filter(p => p.metodeBayar === 'tunai').reduce((sum, p) => sum + Number(p.total || 0), 0);
   const harusnya = Number(s.saldoAwal || 0) + totalTunai;
   const akhirInput = numOnly(document.getElementById('sk-saldo-akhir')?.value);
@@ -907,14 +896,14 @@ async function tutupSesiKas() {
   const s = state.sesiKas;
   if (!s) return;
   const today = todayStr();
-  const transaksi = CashierStore.get('Penjualan').filter(p => p.tanggal === today);
+  const transaksi = transaksiSesiIni();
   const totalTunai = transaksi.filter(p => p.metodeBayar === 'tunai').reduce((sum, p) => sum + Number(p.total || 0), 0);
   const saldoAwal = Number(s.saldoAwal || 0);
   const harusnya = saldoAwal + totalTunai;
   const saldoAkhir = numOnly(document.getElementById('sk-saldo-akhir')?.value) || harusnya;
   const selisih = saldoAkhir - harusnya;
   const user = CashierAuth.getUser();
-  const trx = { id: uid(), sesi: 'tutup', tanggal: today, waktu: nowTimeStr(), saldoAwal, saldoAkhir, totalTunai, totalTransaksi: transaksi.length, selisih, oleh: user?.nama || '', catatan: '' };
+  const trx = { id: uid(), sesi: 'tutup', sesiId: s.id, tanggal: today, waktu: nowTimeStr(), saldoAwal, saldoAkhir, totalTunai, totalTransaksi: transaksi.length, selisih, oleh: user?.nama || '', catatan: '' };
   await CashierStore.insert('Kas', trx);
   await CashierStore._flush();
   const laporanHtml = renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi, selisih);
@@ -923,13 +912,26 @@ async function tutupSesiKas() {
   state.draftSaldoAkhir = '';
   closeSheet();
   toast('Sesi kas ditutup ✓');
-  const html = `<div class="sheet-handle"></div><div class="sheet-head"><h2>Laporan Kasier Hari Ini</h2><button class="btn-icon" data-close-sheet>✕</button></div>
+  // modal laporan: hanya bisa ditutup lewat tombol "Selesai" di bawah
+  const html = `<div class="sheet-head"><h2>Laporan Sesi Kas</h2></div>
     <div id="laporan-print" style="padding:0 14px">${laporanHtml}</div>
-    <div style="display:flex;gap:8px;margin-top:12px">
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn btn-ghost" style="flex:1" data-laporan-download-png>Download PNG</button>
       <button class="btn btn-ghost" style="flex:1" data-laporan-download-pdf>Download PDF</button>
-    </div>`;
-  openSheet(html, 'laporan');
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:12px" data-sesi-laporan-done>Selesai</button>`;
+  openSheetLocked(html, 'laporan');
+}
+
+// sheet yang TIDAK bisa ditutup klik luar / tombol lain — hanya via aksi eksplisit
+function openSheetLocked(html, key) {
+  let overlay = document.getElementById('overlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id = 'overlay'; overlay.className = 'overlay'; document.body.appendChild(overlay); }
+  overlay.dataset.key = key || '';
+  overlay.dataset.lock = '1';
+  overlay.innerHTML = `<div class="sheet" id="sheet-inner">${html}</div>`;
+  overlay.style.display = 'flex';
+  overlay.onclick = null; // jangan tutup saat klik backdrop
 }
 
 function renderLaporanHarian(saldoAwal, saldoAkhir, totalTunai, transaksi, selisih) {
@@ -1161,6 +1163,14 @@ document.addEventListener('click', async (e) => {
   // Sesi Kas
   if (t.dataset.sesiBuka !== undefined) { await openSesiKas(); return; }
   if (t.dataset.sesiTutup !== undefined) { await tutupSesiKas(); return; }
+  // "Selesai" pada modal laporan -> tutup modal -> tampilkan form BUKA SESI baru
+  if (t.dataset.sesiLaporanDone !== undefined) {
+    closeSheet();
+    state.tab = 'lainnya';
+    state.subtab = 'sesi';
+    render();
+    return;
+  }
 
   // Download laporan
   if (t.dataset.laporanDownloadPng !== undefined) { await downloadLaporanPng(); return; }
