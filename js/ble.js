@@ -19,7 +19,8 @@ const esc = {
   boldOn: () => new Uint8Array([0x1B, 0x45, 0x01]),
   boldOff: () => new Uint8Array([0x1B, 0x45, 0x00]),
   feed: (n = 3) => new Uint8Array([0x1B, 0x64, n]),
-  cut: () => new Uint8Array([0x1D, 0x56, 0x42, 0x00]),
+  cut: () => new Uint8Array([0x1D, 0x56, 0x00]),
+  cashdrawer: () => new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA]),
   text: (s) => new TextEncoder().encode((s || '') + '\n')
 };
 
@@ -40,7 +41,7 @@ function padRight(s, width) { return (s || '') + ' '.repeat(Math.max(0, width - 
 
 // Struk -> byte ESC/POS
 export function buildEscPos(trx, bayar) {
-  const W = escWidth('################################');
+  const W = 48; // lebar kertas 48 kolom (RPP02N)
   const rup = n => 'Rp' + (Math.round(Number(n) || 0)).toLocaleString('id-ID');
   const total = Number(trx.total || 0);
   const kembalian = Number(bayar || 0) - total;
@@ -67,7 +68,7 @@ export function buildEscPos(trx, bayar) {
     body.push(padRight('  ' + it.qty + ' x ' + rup(it.hargaJual), W) + rup(it.hargaJual * it.qty));
   });
 
-  const cols = 26;
+  const cols = 48;
   const totalA = padRight('TOTAL', cols) + rup(total);
   const bayarA = padRight('Dibayar', cols) + rup(bayar);
   const kemA = kembalian >= 0 ? padRight('Kembalian', cols) + rup(kembalian) : padRight('KURANG', cols) + rup(-kembalian);
