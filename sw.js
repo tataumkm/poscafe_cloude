@@ -1,6 +1,6 @@
 // Cafeku Service Worker — Chrome 101 compatible (PWA installable)
-// Deployed under a GitHub Pages subpath (poscafe_cloude/), so all
-// paths are resolved relative to this script's scope location.
+// Di-deploy ke root (Vercel / GitHub Pages). Semua path relatif terhadap
+// lokasi scope script ini.
 const CACHE = 'cafeku-v1';
 
 self.addEventListener('install', (e) => {
