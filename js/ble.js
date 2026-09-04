@@ -21,6 +21,7 @@ const esc = {
   boldOff: () => new Uint8Array([0x1B, 0x45, 0x00]),
   fontB: () => new Uint8Array([0x1B, 0x4D, 0x01]), // condensed 9x17 -> 48 kolom/48mm
   fontA: () => new Uint8Array([0x1B, 0x4D, 0x00]),
+  size: (n) => new Uint8Array([0x1D, 0x21, n]), // GS ! n : 0x00 normal, 0x33 = double W+H (4x)
   feed: (n = 3) => new Uint8Array([0x1B, 0x64, n]),
   cut: () => new Uint8Array([0x1D, 0x56, 0x00]),
   cashdrawer: () => new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA]),
@@ -113,8 +114,10 @@ export function buildEscPos(trx, bayar) {
     return lbl + ' '.repeat(Math.max(0, W - lbl.length - v.length)) + v;
   };
 
-  // header: nama toko (Font A, besar, center) + alamat + info (Font B)
-  const headTop = [shop];
+  // header: nama toko (Font A 4x, center) + alamat & info (Font B normal)
+  // 4x -> 1 abjad = 2 kolom, W=42 -> maks 21 abjad/baris agar tak wrap jelek
+  const shop4x = trunc(shop, Math.floor(W / 2));
+  const headTop = [shop4x];
   const headRest = [
     ...(alamat ? [trunc('  ' + alamat, W)] : []),
     SOLID,
@@ -159,12 +162,12 @@ export function buildEscPos(trx, bayar) {
     '',
   ];
 
-  // Urutan ESC: nama cafe Font A besar (center bold), lalu Font B untuk isi.
+  // Urutan ESC: nama cafe Font A + ukuran 4x (double W+H), lalu reset normal.
   const parts = [
-    esc.init(), esc.fontA(), esc.center(), esc.boldOn(),
+    esc.init(), esc.fontA(), esc.center(), esc.boldOn(), esc.size(0x33),
     esc.text(''),
     ...headTop.map(l => esc.text(l)),
-    esc.boldOff(), esc.fontB(),
+    esc.size(0x00), esc.boldOff(), esc.fontB(),
     ...headRest.map(l => esc.text(l)),
     esc.left(),
     ...meta.map(l => esc.text(l)),

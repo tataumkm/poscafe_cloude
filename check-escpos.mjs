@@ -26,8 +26,12 @@ let txt = '';
 for (let i = 0; i < bytes.length; i++) {
   const code = bytes[i];
   if (code === 0x0A) { txt += '\n'; continue; }
-  if (code === 0x1B) { i += 2; continue; }        // ESC + 2 byte parameter
-  if (code === 0x1D) { i += 3; continue; }        // GS + 3 byte parameter
+  if (code === 0x1B) {           // ESC
+    const c2 = bytes[i + 1];
+    i += (c2 === 0x40) ? 1 : 2;  // 1B 40 (init) = 1 param; lain = 2 param
+    continue;
+  }
+  if (code === 0x1D) { i += 2; continue; } // GS (size/cut) = 1 param
   if (code >= 0x20 && code <= 0x7E) txt += String.fromCharCode(code);
 }
 

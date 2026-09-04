@@ -470,6 +470,8 @@ function renderCartSidebarContent() {
   }
   const totalJual = state.cart.reduce((s, c) => s + c.hargaJual * c.qty, 0);
   const diskon = diskonTransaksi(totalJual);
+  const sDinfo = diskonTransaksiInfo(totalJual);
+  const sDisLabel = sDinfo ? '(' + sDinfo.label + (sDinfo.promo.jenis === 'persen' ? ' ' + sDinfo.promo.nilai + '%' : '') + ')' : '';
   const grandTotal = totalJual - diskon + Number(state.adjustment || 0);
   const cartItems = state.cart.map((c, i) => `
     <div class="cs-item">
@@ -487,7 +489,7 @@ function renderCartSidebarContent() {
     <div class="cs-footer">
       <div class="cs-section">${renderCustomerFields()}</div>
       <div class="cs-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
-      ${diskon ? `<div class="cs-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span>${renderDiskonNote(totalJual)}</div>` : ''}
+      ${diskon ? `<div class="cs-row cs-discount"><span>Diskon ${sDisLabel}</span><span>-${rupiah(diskon)}</span></div>` : ''}
       ${state.adjustment ? `<div class="cs-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
       <div class="cs-row cs-total"><span>TOTAL</span><span>${rupiah(grandTotal)}</span></div>
       <div class="cs-section"><label>Platform</label><div class="cs-btn-row">
@@ -531,10 +533,12 @@ function renderSheetFooter() {
     return `<button class="cs-sheet-bayar" data-close-cart style="opacity:.5">Keranjang Kosong</button>`;
   }
   const { totalJual, diskon, grandTotal } = cartTotals();
+  const dinfo = diskonTransaksiInfo(totalJual);
+  const disLabel = dinfo ? '(' + dinfo.label + (dinfo.promo.jenis === 'persen' ? ' ' + dinfo.promo.nilai + '%' : '') + ')' : '';
   return `
     <div class="cs-sheet-section">${renderCustomerFields('sh')}</div>
     <div class="cs-sheet-row"><span>Subtotal</span><span>${rupiah(totalJual)}</span></div>
-    ${diskon ? `<div class="cs-sheet-row cs-discount"><span>Diskon</span><span>−${rupiah(diskon)}</span>${renderDiskonNote(totalJual)}</div>` : ''}
+    ${diskon ? `<div class="cs-sheet-row cs-discount"><span>Diskon ${disLabel}</span><span>-${rupiah(diskon)}</span></div>` : ''}
     ${state.adjustment ? `<div class="cs-sheet-row"><span>Penyesuaian</span><span>${rupiah(state.adjustment)}</span></div>` : ''}
     <div class="cs-sheet-row cs-sheet-total"><span>TOTAL</span><span>${rupiah(grandTotal)}</span></div>
     <div class="cs-sheet-section"><label>Platform</label><div class="cs-sheet-prow">
