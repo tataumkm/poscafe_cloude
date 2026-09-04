@@ -2,37 +2,28 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#1F1B16" />
-  <title>Cafeku — Sistem Kasir & Manajemen Cafe</title>
-  <meta name="description" content="Aplikasi kasir, stok, resep HPP, dan laporan keuangan sederhana untuk cafe." />
-  <!-- <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☕</text></svg>" />
-  <link rel="manifest" href="manifest.webmanifest" /> -->
-
-  <link rel="icon" type="image/png" href="https://tataumkm.github.io/poscafe_cloude/favicon-96x96.png" sizes="96x96" />
-  <link rel="icon" type="image/svg+xml" href="https://tataumkm.github.io/poscafe_cloude/favicon.svg" />
-  <link rel="shortcut icon" href="https://tataumkm.github.io/poscafe_cloude/favicon.ico" />
-  <link rel="apple-touch-icon" sizes="180x180" href="https://tataumkm.github.io/poscafe_cloude/apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-title" content="CafePOS" />
-  <link rel="manifest" href="https://tataumkm.github.io/poscafe_cloude/site.webmanifest" />
-
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="stylesheet" href="css/style.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <title>Cafeku</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(160deg, #1a1510, #2c2318, #1f1b16); color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 24px; }
+    .box h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: -.5px; }
+    .box p { font-size: 14px; opacity: .6; margin: 0 0 20px; }
+    .box a { display: inline-block; padding: 10px 18px; margin: 4px; border-radius: 10px; text-decoration: none;
+      font-size: 14px; font-weight: 600; }
+    .box .o { background: #B8752E; color: #fff; }
+    .box .k { background: rgba(255,255,255,.12); color: #fff; }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <div class="page">
-      <div class="empty" style="padding-top:80px">Memuat…</div>
-    </div>
+  <div class="box">
+    <h1>Cafeku</h1>
+    <p>Sedang perbaikan. Mohon kembali lagi nanti.</p>
+    <a class="o" href="./owner/">Buka Owner</a>
+    <a class="k" href="./cashier/">Buka Kasir</a>
   </div>
-  <input type="file" id="import-file" accept="application/json" hidden />
-  <script type="module" src="js/app.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(function () {});
-    }
-  </script>
 </body>
 </html>
